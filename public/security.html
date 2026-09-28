@@ -1617,13 +1617,13 @@ async function openGallery() {
                 );
 
 
-            } catch (error) {
+          } catch (error) {
 
-                console.error(
-                    "Gallery QR error:",
-                    error
-                );
+    showError(
+        "No QR code could be detected in this image. Please select a clear screenshot of the Day Pass QR."
+    );
 
+}
 
                 showError(
                     "No valid QR code was found in this image."
