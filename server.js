@@ -1,10 +1,8 @@
 "use strict";
 
-/*
-============================================================
- SRM AP DAYPASS - SECURE / CONCURRENT SERVER
-============================================================
-*/
+/* =========================================================
+   SRM AP DAYPASS - COMPLETE SERVER
+   ========================================================= */
 
 require("dotenv").config();
 
@@ -14,6 +12,10 @@ const fs = require("fs");
 const crypto = require("crypto");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+
+/* =========================================================
+   FIREBASE ADMIN - MODERN SDK
+   ========================================================= */
 
 const {
     initializeApp,
@@ -30,320 +32,217 @@ const {
     FieldValue
 } = require("firebase-admin/firestore");
 
-
-/*
-============================================================
- CONFIGURATION
-============================================================
-*/
+/* =========================================================
+   APP CONFIG
+   ========================================================= */
 
 const app = express();
 
-const PORT =
-    Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3000);
 
-const QR_SECRET =
-    process.env.DAYPASS_QR_SECRET;
+const QR_SECRET = process.env.DAYPASS_QR_SECRET;
 
-const QR_TTL = 30;
+const QR_TTL = 120; // QR valid for 120 seconds
 
 const DAILY_LIMIT = 3;
 
-const MAX_BODY_SIZE = "20kb";
+/* =========================================================
+   BASIC VALIDATION
+   ========================================================= */
 
-const PUBLIC_DIR =
-    path.join(__dirname, "public");
-
-
-/*
-============================================================
- VALIDATE CONFIG
-============================================================
-*/
-
-if (
-    !QR_SECRET ||
-    QR_SECRET.length < 48
-) {
-    console.error(
-        "DAYPASS_QR_SECRET is missing or shorter than 48 characters."
-    );
-
+if (!QR_SECRET || QR_SECRET.length < 48) {
+    console.error("");
+    console.error("❌ DAYPASS_QR_SECRET is missing or too short.");
+    console.error("Please add a secret of at least 48 characters to .env");
+    console.error("");
     process.exit(1);
 }
 
-
-/*
-============================================================
- FIREBASE INITIALIZATION
-============================================================
-*/
+/* =========================================================
+   FIREBASE INITIALIZATION
+   ========================================================= */
 
 function initializeFirebase() {
-
-    if (getApps().length > 0) {
-        return;
-    }
-
-    let serviceAccount;
-
-    /*
-    --------------------------------------------------------
-     Render / Production
-    --------------------------------------------------------
-    */
-
-    if (
-        process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-    ) {
-
-        try {
-
-            serviceAccount =
-                JSON.parse(
-                    process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-                );
-
-        } catch (error) {
-
-            console.error(
-                "Invalid FIREBASE_SERVICE_ACCOUNT_JSON."
-            );
-
-            process.exit(1);
+    try {
+        /* Already initialized */
+        if (getApps().length > 0) {
+            console.log("✅ Firebase Admin already initialized");
+            return;
         }
 
-    }
+        let serviceAccount;
 
-    /*
-    --------------------------------------------------------
-     Local development
-    --------------------------------------------------------
-    */
+        /* -----------------------------------------------------
+           OPTION 1: Environment variable
+           Used mainly on Render
+        ----------------------------------------------------- */
 
-    else {
+        if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+            try {
+                serviceAccount = JSON.parse(
+                    process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+                );
+            } catch (error) {
+                console.error(
+                    "❌ FIREBASE_SERVICE_ACCOUNT_JSON contains invalid JSON."
+                );
+                console.error(error.message);
+                process.exit(1);
+            }
+        }
 
-        const serviceAccountFile =
-            path.join(
+        /* -----------------------------------------------------
+           OPTION 2: Local JSON file
+        ----------------------------------------------------- */
+
+        else {
+            const serviceAccountPath = path.join(
                 __dirname,
                 "firebase-service-account.json"
             );
 
-        if (
-            !fs.existsSync(
-                serviceAccountFile
-            )
-        ) {
-
-            console.error(
-                "firebase-service-account.json not found."
-            );
-
-            process.exit(1);
-        }
-
-        try {
-
-            serviceAccount =
-                JSON.parse(
-                    fs.readFileSync(
-                        serviceAccountFile,
-                        "utf8"
-                    )
+            if (!fs.existsSync(serviceAccountPath)) {
+                console.error("");
+                console.error(
+                    "❌ firebase-service-account.json not found."
                 );
+                console.error(
+                    "Place firebase-service-account.json inside:"
+                );
+                console.error(__dirname);
+                console.error("");
+                process.exit(1);
+            }
 
-        } catch (error) {
+            try {
+                serviceAccount = JSON.parse(
+                    fs.readFileSync(serviceAccountPath, "utf8")
+                );
+            } catch (error) {
+                console.error(
+                    "❌ Could not read firebase-service-account.json"
+                );
+                console.error(error.message);
+                process.exit(1);
+            }
+        }
 
+        /* -----------------------------------------------------
+           Validate service account
+        ----------------------------------------------------- */
+
+        if (
+            !serviceAccount ||
+            !serviceAccount.project_id ||
+            !serviceAccount.client_email ||
+            !serviceAccount.private_key
+        ) {
             console.error(
-                "Unable to read Firebase service account."
+                "❌ Firebase service account is incomplete."
             );
-
             process.exit(1);
         }
+
+        /* -----------------------------------------------------
+           Initialize Firebase
+        ----------------------------------------------------- */
+
+        initializeApp({
+            credential: cert(serviceAccount)
+        });
+
+        console.log("✅ Firebase Admin initialized successfully");
+
+    } catch (error) {
+        console.error("");
+        console.error("❌ Firebase initialization failed");
+        console.error(error);
+        console.error("");
+        process.exit(1);
     }
-
-
-    initializeApp({
-        credential:
-            cert(serviceAccount)
-    });
 }
-
 
 initializeFirebase();
 
+/* =========================================================
+   FIREBASE SERVICES
+   ========================================================= */
 
-const db =
-    getFirestore();
+const db = getFirestore();
+const auth = getAuth();
 
-const auth =
-    getAuth();
+console.log("✅ Firebase Firestore connected");
+console.log("✅ Firebase Authentication connected");
 
-
-console.log(
-    "Firebase Admin initialized successfully."
-);
-
-
-/*
-============================================================
- EXPRESS SECURITY
-============================================================
-*/
+/* =========================================================
+   EXPRESS SECURITY
+   ========================================================= */
 
 app.disable("x-powered-by");
-
-
-app.set(
-    "trust proxy",
-    1
-);
-
-
-/*
-------------------------------------------------------------
- Helmet
-------------------------------------------------------------
-*/
 
 app.use(
     helmet({
         contentSecurityPolicy: false,
-        crossOriginEmbedderPolicy: false
+        crossOriginEmbedderPolicy: false,
+        referrerPolicy: {
+            policy: "strict-origin-when-cross-origin"
+        },
+        frameguard: {
+            action: "deny"
+        },
+        hidePoweredBy: true
     })
 );
-
-
-/*
-------------------------------------------------------------
- Request size limits
-------------------------------------------------------------
-*/
 
 app.use(
     express.json({
-        limit: MAX_BODY_SIZE
+        limit: "20kb"
     })
 );
-
 
 app.use(
     express.urlencoded({
         extended: false,
-        limit: MAX_BODY_SIZE
+        limit: "20kb"
     })
 );
 
-
-/*
-============================================================
- RATE LIMITERS
-============================================================
-*/
-
-const globalLimiter =
-    rateLimit({
-
-        windowMs:
-            15 * 60 * 1000,
-
-        max: 500,
-
-        standardHeaders: true,
-
-        legacyHeaders: false,
-
-        message: {
-            success: false,
-            error:
-                "Too many requests. Please try again later."
-        },
-
-        skip: req =>
-            req.path === "/api/status"
-    });
-
-
-const authLimiter =
-    rateLimit({
-
-        windowMs:
-            15 * 60 * 1000,
-
-        max: 100,
-
-        standardHeaders: true,
-
-        legacyHeaders: false,
-
-        message: {
-            success: false,
-            error:
-                "Too many authentication requests."
-        }
-    });
-
-
-const qrLimiter =
-    rateLimit({
-
-        windowMs:
-            60 * 1000,
-
-        max: 30,
-
-        standardHeaders: true,
-
-        legacyHeaders: false,
-
-        message: {
-            success: false,
-            error:
-                "Too many QR requests. Please wait."
-        }
-    });
-
-
-const adminLimiter =
-    rateLimit({
-
-        windowMs:
-            60 * 1000,
-
-        max: 60,
-
-        standardHeaders: true,
-
-        legacyHeaders: false,
-
-        message: {
-            success: false,
-            error:
-                "Too many administrative requests."
-        }
-    });
-
+/* =========================================================
+   GLOBAL RATE LIMIT
+   ========================================================= */
 
 app.use(
-    globalLimiter
+    rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 300,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: {
+            error: "Too many requests. Please try again later."
+        }
+    })
 );
 
+/* =========================================================
+   QR RATE LIMIT
+   ========================================================= */
 
-/*
-============================================================
- HELPERS
-============================================================
-*/
+const qrLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        error: "Too many QR requests. Please wait a moment."
+    }
+});
 
-function clean(
-    value,
-    length = 500
-) {
+/* =========================================================
+   HELPERS
+   ========================================================= */
 
-    if (
-        value === undefined ||
-        value === null
-    ) {
+function clean(value, length = 500) {
+    if (value === undefined || value === null) {
         return "";
     }
 
@@ -352,106 +251,42 @@ function clean(
         .slice(0, length);
 }
 
+/* =========================================================
+   INDIA DATE
+   ========================================================= */
 
 function getToday() {
-
-    return new Intl.DateTimeFormat(
-        "en-CA",
-        {
-            timeZone:
-                "Asia/Kolkata",
-
-            year: "numeric",
-
-            month: "2-digit",
-
-            day: "2-digit"
-        }
-    ).format(
-        new Date()
-    );
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    }).format(new Date());
 }
 
+/* =========================================================
+   CONSTANT TIME COMPARE
+   ========================================================= */
 
-function sameConstantTime(
-    a,
-    b
-) {
-
+function sameConstantTime(a, b) {
     try {
+        const x = Buffer.from(a);
+        const y = Buffer.from(b);
 
-        const x =
-            Buffer.from(
-                String(a)
-            );
-
-        const y =
-            Buffer.from(
-                String(b)
-            );
-
-        if (
-            x.length !== y.length
-        ) {
+        if (x.length !== y.length) {
             return false;
         }
 
-        return crypto.timingSafeEqual(
-            x,
-            y
-        );
+        return crypto.timingSafeEqual(x, y);
 
     } catch (_) {
-
         return false;
     }
 }
 
-
-function safeDate(
-    value
-) {
-
-    try {
-
-        if (
-            value &&
-            typeof value.toDate ===
-                "function"
-        ) {
-            return value.toDate();
-        }
-
-        if (
-            value &&
-            typeof value.toMillis ===
-                "function"
-        ) {
-            return new Date(
-                value.toMillis()
-            );
-        }
-
-        if (
-            value instanceof Date
-        ) {
-            return value;
-        }
-
-        return null;
-
-    } catch (_) {
-
-        return null;
-    }
-}
-
-
-/*
-============================================================
- AUDIT LOG
-============================================================
-*/
+/* =========================================================
+   AUDIT LOG
+   ========================================================= */
 
 async function audit(
     actorUid,
@@ -460,310 +295,115 @@ async function audit(
     targetUid = null,
     details = {}
 ) {
-
     try {
-
-        await db
-            .collection("auditLogs")
-            .add({
-
-                actorUid:
-                    clean(
-                        actorUid,
-                        200
-                    ),
-
-                actorRole:
-                    clean(
-                        actorRole,
-                        50
-                    ),
-
-                action:
-                    clean(
-                        action,
-                        100
-                    ),
-
-                targetUid:
-                    targetUid
-                        ? clean(
-                              targetUid,
-                              200
-                          )
-                        : null,
-
-                details,
-
-                createdAt:
-                    FieldValue.serverTimestamp()
-            });
-
+        await db.collection("auditLogs").add({
+            actorUid,
+            actorRole,
+            action,
+            targetUid,
+            details,
+            createdAt: FieldValue.serverTimestamp()
+        });
     } catch (error) {
-
-        /*
-        Audit failure must NEVER
-        bring down the main request.
-        */
-
         console.error(
-            "Audit log error:",
+            "⚠️ Audit log error:",
             error.message
         );
     }
 }
 
+/* =========================================================
+   AUTHENTICATION
+   ========================================================= */
 
-/*
-============================================================
- USER PROFILE CACHE
-============================================================
-*/
-
-const profileCache =
-    new Map();
-
-const PROFILE_CACHE_TTL =
-    30 * 1000;
-
-
-function getCachedProfile(
-    uid
-) {
-
-    const cached =
-        profileCache.get(uid);
-
-    if (!cached) {
-        return null;
-    }
-
-    if (
-        Date.now() -
-            cached.time >
-        PROFILE_CACHE_TTL
-    ) {
-
-        profileCache.delete(uid);
-
-        return null;
-    }
-
-    return cached.profile;
-}
-
-
-function cacheProfile(
-    uid,
-    profile
-) {
-
-    profileCache.set(
-        uid,
-        {
-            profile,
-            time: Date.now()
-        }
-    );
-}
-
-
-/*
-============================================================
- AUTHENTICATION
-============================================================
-*/
-
-async function authenticate(
-    req,
-    res,
-    next
-) {
+async function authenticate(req, res, next) {
 
     try {
 
         const header =
-            req.headers.authorization ||
-            "";
+            req.headers.authorization || "";
 
-        if (
-            !header.startsWith(
-                "Bearer "
-            )
-        ) {
+        if (!header.startsWith("Bearer ")) {
 
-            return res
-                .status(401)
-                .json({
-                    success: false,
-                    error:
-                        "Authentication required."
-                });
+            return res.status(401).json({
+                success: false,
+                error: "AUTH_REQUIRED",
+                message: "Authentication required."
+            });
         }
-
 
         const token =
-            header
-                .substring(7)
-                .trim();
+            header.substring(7).trim();
 
+        if (!token) {
 
-        if (
-            !token ||
-            token.length > 10000
-        ) {
-
-            return res
-                .status(401)
-                .json({
-                    success: false,
-                    error:
-                        "Invalid authentication token."
-                });
+            return res.status(401).json({
+                success: false,
+                error: "AUTH_REQUIRED",
+                message: "Authentication token is missing."
+            });
         }
 
-
-        /*
-        ----------------------------------------------------
-         Verify Firebase token and check revocation
-        ----------------------------------------------------
-        */
+        /* Verify Firebase token + check revocation */
 
         const decoded =
-            await auth.verifyIdToken(
-                token,
-                true
-            );
+            await auth.verifyIdToken(token, true);
 
+        const uid = decoded.uid;
 
-        const uid =
-            decoded.uid;
+        /* Load application profile */
 
+        const profileSnap =
+            await db
+                .collection("students")
+                .doc(uid)
+                .get();
 
-        /*
-        ----------------------------------------------------
-         Get profile from cache first
-        ----------------------------------------------------
-        */
+        if (!profileSnap.exists) {
 
-        let profile =
-            getCachedProfile(
-                uid
-            );
-
-
-        if (!profile) {
-
-            const profileSnap =
-                await db
-                    .collection(
-                        "students"
-                    )
-                    .doc(uid)
-                    .get();
-
-
-            if (
-                !profileSnap.exists
-            ) {
-
-                return res
-                    .status(403)
-                    .json({
-                        success: false,
-                        error:
-                            "User profile not found."
-                    });
-            }
-
-
-            profile =
-                profileSnap.data();
-
-
-            cacheProfile(
-                uid,
-                profile
-            );
+            return res.status(403).json({
+                success: false,
+                error: "PROFILE_NOT_FOUND",
+                message: "User profile not found."
+            });
         }
 
+        const profile =
+            profileSnap.data();
 
-        if (
-            (
-                profile.accountStatus ||
-                "ACTIVE"
-            ) !== "ACTIVE"
-        ) {
+        const accountStatus =
+            profile.accountStatus || "ACTIVE";
 
-            return res
-                .status(403)
-                .json({
-                    success: false,
-                    error:
-                        "This account is blocked."
-                });
+        if (accountStatus !== "ACTIVE") {
+
+            return res.status(403).json({
+                success: false,
+                error: "ACCOUNT_BLOCKED",
+                message: "This account is blocked."
+            });
         }
-
-
-        const role =
-            profile.role ||
-            "STUDENT";
-
-
-        const validRoles = [
-            "STUDENT",
-            "SECURITY",
-            "ADMIN",
-            "SUPER_ADMIN"
-        ];
-
-
-        if (
-            !validRoles.includes(
-                role
-            )
-        ) {
-
-            return res
-                .status(403)
-                .json({
-                    success: false,
-                    error:
-                        "Invalid account role."
-                });
-        }
-
 
         req.user = {
-
             uid,
-
             email:
                 decoded.email ||
                 profile.email ||
                 "",
-
             name:
                 profile.name ||
                 decoded.name ||
-                decoded.email ||
-                "Unknown",
-
+                "",
             studentId:
                 profile.studentId ||
                 "",
-
             studentType:
                 profile.studentType ||
                 "",
-
-            role,
-
-            accountStatus:
-                profile.accountStatus ||
-                "ACTIVE"
+            role:
+                profile.role ||
+                "STUDENT",
+            accountStatus
         };
-
 
         next();
 
@@ -771,83 +411,48 @@ async function authenticate(
 
         console.error(
             "Authentication error:",
-            error.code ||
-                error.message
+            error.message
         );
 
-
-        if (
-            error.code ===
-            "auth/id-token-revoked"
-        ) {
-
-            return res
-                .status(401)
-                .json({
-                    success: false,
-                    error:
-                        "Session expired. Please login again."
-                });
-        }
-
-
-        return res
-            .status(401)
-            .json({
-                success: false,
-                error:
-                    "Authentication failed."
-            });
+        return res.status(401).json({
+            success: false,
+            error: "AUTH_INVALID",
+            message:
+                "Your session has expired or is invalid. Please sign in again."
+        });
     }
 }
 
+/* =========================================================
+   ROLE CHECK
+   ========================================================= */
 
-/*
-============================================================
- ROLE PROTECTION
-============================================================
-*/
+function requireRoles(...roles) {
 
-function requireRoles(
-    ...roles
-) {
-
-    return (
-        req,
-        res,
-        next
-    ) => {
+    return (req, res, next) => {
 
         if (
             !req.user ||
-            !roles.includes(
-                req.user.role
-            )
+            !roles.includes(req.user.role)
         ) {
 
-            return res
-                .status(403)
-                .json({
-                    success: false,
-                    error:
-                        "You are not authorized."
-                });
+            return res.status(403).json({
+                success: false,
+                error: "NOT_AUTHORIZED",
+                message:
+                    "You are not authorized to perform this action."
+            });
         }
 
         next();
     };
 }
 
+/* =========================================================
+   QR SIGNATURE
+   ========================================================= */
 
-/*
-============================================================
- QR CREATION
-============================================================
-*/
-
-function createSignature(
-    data
-) {
+function createSignature(data) {
 
     return crypto
         .createHmac(
@@ -858,75 +463,48 @@ function createSignature(
         .digest("base64url");
 }
 
+/* =========================================================
+   CREATE QR
+   ========================================================= */
 
-function createQR(
-    user
-) {
+function createQR(user) {
 
     const now =
-        Math.floor(
-            Date.now() / 1000
-        );
-
+        Math.floor(Date.now() / 1000);
 
     const payload = {
-
         v: 1,
-
-        uid:
-            user.uid,
-
-        studentId:
-            user.studentId,
-
-        iat:
-            now,
-
-        exp:
-            now + QR_TTL,
-
+        uid: user.uid,
+        studentId: user.studentId,
+        iat: now,
+        exp: now + QR_TTL,
         nonce:
             crypto
-                .randomBytes(32)
+                .randomBytes(16)
                 .toString("hex")
     };
 
-
     const encoded =
         Buffer
-            .from(
-                JSON.stringify(
-                    payload
-                )
-            )
-            .toString(
-                "base64url"
-            );
-
+            .from(JSON.stringify(payload))
+            .toString("base64url");
 
     const signature =
-        createSignature(
-            encoded
-        );
-
+        createSignature(encoded);
 
     return {
-
         token:
             `${encoded}.${signature}`,
-
-        issuedAt:
-            now,
-
-        expiresAt:
-            now + QR_TTL
+        issuedAt: now,
+        expiresAt: now + QR_TTL
     };
 }
 
+/* =========================================================
+   VERIFY QR
+   ========================================================= */
 
-function verifyQR(
-    token
-) {
+function verifyQR(token) {
 
     if (!token) {
         throw new Error(
@@ -934,42 +512,20 @@ function verifyQR(
         );
     }
 
-
-    if (
-        token.length > 10000
-    ) {
-        throw new Error(
-            "QR code is too large."
-        );
-    }
-
-
     const parts =
         token.split(".");
 
-
-    if (
-        parts.length !== 2
-    ) {
-
+    if (parts.length !== 2) {
         throw new Error(
             "Invalid QR code."
         );
     }
 
-
-    const encoded =
-        parts[0];
-
-    const signature =
-        parts[1];
-
+    const encoded = parts[0];
+    const signature = parts[1];
 
     const expected =
-        createSignature(
-            encoded
-        );
-
+        createSignature(encoded);
 
     if (
         !sameConstantTime(
@@ -977,15 +533,12 @@ function verifyQR(
             expected
         )
     ) {
-
         throw new Error(
             "Invalid QR signature."
         );
     }
 
-
     let payload;
-
 
     try {
 
@@ -996,9 +549,7 @@ function verifyQR(
                         encoded,
                         "base64url"
                     )
-                    .toString(
-                        "utf8"
-                    )
+                    .toString("utf8")
             );
 
     } catch (_) {
@@ -1008,168 +559,94 @@ function verifyQR(
         );
     }
 
-
     const now =
-        Math.floor(
-            Date.now() / 1000
-        );
+        Math.floor(Date.now() / 1000);
 
-
-    if (
-        payload.v !== 1
-    ) {
-
+    if (payload.v !== 1) {
         throw new Error(
             "Unsupported QR version."
         );
     }
-
 
     if (
         !payload.uid ||
         !payload.studentId ||
         !payload.nonce
     ) {
-
         throw new Error(
             "Incomplete QR code."
         );
     }
 
-
-    if (
-        typeof payload.uid !==
-            "string" ||
-        typeof payload.studentId !==
-            "string" ||
-        typeof payload.nonce !==
-            "string"
-    ) {
-
-        throw new Error(
-            "Invalid QR fields."
-        );
-    }
-
-
-    if (
-        payload.exp <= now
-    ) {
-
+    if (payload.exp <= now) {
         throw new Error(
             "QR code has expired."
         );
     }
 
-
-    if (
-        payload.iat > now + 5
-    ) {
-
+    if (payload.iat > now + 5) {
         throw new Error(
             "Invalid QR issue time."
         );
     }
 
-
     if (
-        payload.exp -
-            payload.iat >
+        payload.exp - payload.iat >
         QR_TTL + 5
     ) {
-
         throw new Error(
             "Invalid QR lifetime."
         );
     }
 
-
     return payload;
 }
 
+/* =========================================================
+   STATUS
+   ========================================================= */
 
-/*
-============================================================
- STATUS
-============================================================
-*/
+app.get("/api/status", (req, res) => {
 
-app.get(
-    "/api/status",
-    (req, res) => {
+    res.json({
+        success: true,
+        status: "online",
+        time: new Date().toISOString()
+    });
+});
 
-        res.json({
-
-            success: true,
-
-            status: "online",
-
-            environment:
-                process.env.NODE_ENV ||
-                "development",
-
-            time:
-                new Date().toISOString()
-        });
-    }
-);
-
-
-/*
-============================================================
- CURRENT USER
-============================================================
-*/
+/* =========================================================
+   CURRENT USER
+   ========================================================= */
 
 app.get(
     "/api/me",
     authenticate,
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         res.json({
-
             success: true,
-
-            user:
-                req.user,
-
-            role:
-                req.user.role
+            user: req.user
         });
     }
 );
 
+/* =========================================================
+   STUDENT QR GENERATION
+   ========================================================= */
 
-/*
-============================================================
- GENERATE STUDENT QR
-============================================================
-*/
-
-async function generateQR(
-    req,
-    res
-) {
+async function generateQR(req, res) {
 
     try {
 
-        if (
-            req.user.role !==
-            "STUDENT"
-        ) {
+        if (req.user.role !== "STUDENT") {
 
-            return res
-                .status(403)
-                .json({
-                    success: false,
-                    error:
-                        "Only students can generate QR codes."
-                });
+            return res.status(403).json({
+                success: false,
+                error:
+                    "Only students can generate QR codes."
+            });
         }
-
 
         const snapshot =
             await db
@@ -1181,83 +658,52 @@ async function generateQR(
                 )
                 .get();
 
-
         const today =
             getToday();
 
-
         let todayCount = 0;
 
+        snapshot.forEach(doc => {
 
-        snapshot.forEach(
-            doc => {
+            const data =
+                doc.data();
 
-                const data =
-                    doc.data();
-
-
-                if (
-                    data.dayKey ===
-                    today
-                ) {
-
-                    todayCount++;
-                }
+            if (
+                data.dayKey === today
+            ) {
+                todayCount++;
             }
-        );
-
+        });
 
         if (
-            todayCount >=
-            DAILY_LIMIT
+            todayCount >= DAILY_LIMIT
         ) {
 
-            return res
-                .status(429)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Daily entry limit reached.",
-
-                    dailyCount:
-                        todayCount,
-
-                    dailyLimit:
-                        DAILY_LIMIT
-                });
+            return res.status(429).json({
+                success: false,
+                error:
+                    "Daily entry limit reached.",
+                dailyCount: todayCount,
+                dailyLimit: DAILY_LIMIT
+            });
         }
 
-
         const qr =
-            createQR(
-                req.user
-            );
+            createQR(req.user);
 
-
-        /*
-        Audit is intentionally not
-        allowed to block QR creation.
-        */
-
-        audit(
+        await audit(
             req.user.uid,
             req.user.role,
             "QR_GENERATED",
             req.user.uid
         );
 
-
-        return res.json({
-
+        res.json({
             success: true,
 
-            qrData:
-                qr.token,
+            qrData: qr.token,
 
-            token:
-                qr.token,
+            token: qr.token,
 
             issuedAt:
                 qr.issuedAt,
@@ -1266,25 +712,18 @@ async function generateQR(
                 qr.expiresAt,
 
             qr: {
-
-                token:
-                    qr.token,
-
+                token: qr.token,
                 issuedAt:
                     new Date(
-                        qr.issuedAt *
-                        1000
+                        qr.issuedAt * 1000
                     ).toISOString(),
-
                 expiresAt:
                     new Date(
-                        qr.expiresAt *
-                        1000
+                        qr.expiresAt * 1000
                     ).toISOString()
             },
 
-            dailyCount:
-                todayCount,
+            dailyCount: todayCount,
 
             dailyLimit:
                 DAILY_LIMIT
@@ -1294,19 +733,16 @@ async function generateQR(
 
         console.error(
             "QR generation error:",
-            error.message
+            error
         );
 
-        return res
-            .status(500)
-            .json({
-                success: false,
-                error:
-                    "Unable to generate QR code."
-            });
+        res.status(500).json({
+            success: false,
+            error:
+                "Unable to generate QR code."
+        });
     }
 }
-
 
 app.get(
     "/api/qr",
@@ -1315,7 +751,6 @@ app.get(
     generateQR
 );
 
-
 app.post(
     "/api/qr",
     qrLimiter,
@@ -1323,12 +758,10 @@ app.post(
     generateQR
 );
 
-
-/*
-============================================================
- VERIFY QR
-============================================================
-*/
+/* =========================================================
+   VERIFY QR
+   SECURITY + SUPER ADMIN
+   ========================================================= */
 
 app.post(
     "/api/verify-qr",
@@ -1338,10 +771,7 @@ app.post(
         "SECURITY",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
@@ -1353,43 +783,33 @@ app.post(
                     10000
                 );
 
-
             const payload =
-                verifyQR(
-                    token
-                );
+                verifyQR(token);
 
+            /* ---------------------------------------------
+               Find student
+            --------------------------------------------- */
 
             const studentSnap =
                 await db
-                    .collection(
-                        "students"
-                    )
-                    .doc(
-                        payload.uid
-                    )
+                    .collection("students")
+                    .doc(payload.uid)
                     .get();
 
-
-            if (
-                !studentSnap.exists
-            ) {
+            if (!studentSnap.exists) {
 
                 throw new Error(
                     "Student account not found."
                 );
             }
 
-
             const student =
                 studentSnap.data();
 
-
             if (
-                (
-                    student.accountStatus ||
-                    "ACTIVE"
-                ) !== "ACTIVE"
+                (student.accountStatus ||
+                    "ACTIVE") !==
+                "ACTIVE"
             ) {
 
                 throw new Error(
@@ -1397,14 +817,9 @@ app.post(
                 );
             }
 
-
             if (
-                clean(
-                    student.studentId
-                ) !==
-                clean(
-                    payload.studentId
-                )
+                clean(student.studentId) !==
+                clean(payload.studentId)
             ) {
 
                 throw new Error(
@@ -1412,69 +827,32 @@ app.post(
                 );
             }
 
-
             const today =
                 getToday();
 
-
-            /*
-            ------------------------------------------------
-             IMPORTANT:
-             The daily counter is stored in Firestore and
-             updated inside the SAME transaction as the
-             QR nonce and entry.
-
-             This prevents multiple simultaneous scanners
-             from bypassing the 3-entry limit.
-            ------------------------------------------------
-            */
-
-            const counterId =
-                `${payload.uid}_${today}`;
-
-            const counterRef =
-                db
-                    .collection(
-                        "dailyEntryCounters"
-                    )
-                    .doc(
-                        counterId
-                    );
-
-
-            const nonceRef =
-                db
-                    .collection(
-                        "usedQRNonces"
-                    )
-                    .doc(
-                        payload.nonce
-                    );
-
-
-            const entryRef =
-                db
-                    .collection(
-                        "entries"
-                    )
-                    .doc();
-
+            /* ---------------------------------------------
+               Transaction
+            --------------------------------------------- */
 
             const result =
                 await db.runTransaction(
                     async transaction => {
 
-                        /*
-                        ------------------------------------
-                         READS
-                        ------------------------------------
-                        */
+                        /* Replay protection */
+
+                        const nonceRef =
+                            db
+                                .collection(
+                                    "usedQRNonces"
+                                )
+                                .doc(
+                                    payload.nonce
+                                );
 
                         const nonceSnap =
                             await transaction.get(
                                 nonceRef
                             );
-
 
                         if (
                             nonceSnap.exists
@@ -1485,35 +863,36 @@ app.post(
                             );
                         }
 
+                        /* Count today's entries */
 
-                        const counterSnap =
-                            await transaction.get(
-                                counterRef
-                            );
-
+                        const entriesSnap =
+                            await db
+                                .collection(
+                                    "entries"
+                                )
+                                .where(
+                                    "studentUid",
+                                    "==",
+                                    payload.uid
+                                )
+                                .get();
 
                         let todayCount = 0;
 
+                        entriesSnap.forEach(
+                            doc => {
 
-                        if (
-                            counterSnap.exists
-                        ) {
+                                const data =
+                                    doc.data();
 
-                            todayCount =
-                                Number(
-                                    counterSnap
-                                        .data()
-                                        .count ||
-                                    0
-                                );
-                        }
-
-
-                        /*
-                        ------------------------------------
-                         ATOMIC DAILY LIMIT
-                        ------------------------------------
-                        */
+                                if (
+                                    data.dayKey ===
+                                    today
+                                ) {
+                                    todayCount++;
+                                }
+                            }
+                        );
 
                         if (
                             todayCount >=
@@ -1525,158 +904,89 @@ app.post(
                             );
                         }
 
+                        const entryRef =
+                            db
+                                .collection(
+                                    "entries"
+                                )
+                                .doc();
 
                         const newCount =
                             todayCount + 1;
 
+                        const entryData = {
 
-                        /*
-                        ------------------------------------
-                         CREATE ENTRY
-                        ------------------------------------
-                        */
+                            studentUid:
+                                payload.uid,
 
-                        transaction.create(
+                            studentId:
+                                student.studentId,
+
+                            studentName:
+                                student.name ||
+                                "",
+
+                            studentEmail:
+                                student.email ||
+                                "",
+
+                            studentType:
+                                student.studentType ||
+                                "",
+
+                            verifierUid:
+                                req.user.uid,
+
+                            verifierName:
+                                req.user.name ||
+                                "",
+
+                            verifierRole:
+                                req.user.role,
+
+                            verifiedBy:
+                                req.user.name ||
+                                req.user.uid,
+
+                            verifiedByRole:
+                                req.user.role,
+
+                            dayKey:
+                                today,
+
+                            status:
+                                "ALLOWED",
+
+                            qrNonce:
+                                payload.nonce,
+
+                            createdAt:
+                                FieldValue.serverTimestamp()
+                        };
+
+                        transaction.set(
                             entryRef,
-                            {
+                            entryData
+                        );
 
+                        transaction.set(
+                            nonceRef,
+                            {
                                 studentUid:
                                     payload.uid,
 
-                                studentId:
-                                    student.studentId ||
-                                    "",
-
-                                studentName:
-                                    student.name ||
-                                    "",
-
-                                studentEmail:
-                                    student.email ||
-                                    "",
-
-                                studentType:
-                                    student.studentType ||
-                                    "",
-
-
-                                /*
-                                Human-readable verifier
-                                */
-
-                                verifiedBy:
-                                    req.user.name ||
-                                    req.user.email ||
-                                    "Unknown",
-
-
-                                verifiedByUid:
-                                    req.user.uid,
-
-
-                                verifiedByRole:
-                                    req.user.role,
-
-
-                                verifierUid:
-                                    req.user.uid,
-
-
-                                verifierName:
-                                    req.user.name ||
-                                    req.user.email ||
-                                    "Unknown",
-
-
-                                verifierRole:
-                                    req.user.role,
-
-
-                                dayKey:
-                                    today,
-
-
-                                status:
-                                    "ALLOWED",
-
-
-                                qrNonce:
-                                    payload.nonce,
-
-
-                                createdAt:
-                                    FieldValue.serverTimestamp()
-                            }
-                        );
-
-
-                        /*
-                        ------------------------------------
-                         MARK QR AS USED
-                        ------------------------------------
-                        */
-
-                        transaction.create(
-                            nonceRef,
-                            {
-
-                                uid:
-                                    payload.uid,
-
-                                studentId:
-                                    payload.studentId,
-
                                 usedBy:
                                     req.user.uid,
-
-                                usedByName:
-                                    req.user.name ||
-                                    req.user.email ||
-                                    "Unknown",
 
                                 usedByRole:
                                     req.user.role,
 
                                 usedAt:
-                                    FieldValue.serverTimestamp(),
-
-                                expiresAt:
-                                    payload.exp
-                            }
-                        );
-
-
-                        /*
-                        ------------------------------------
-                         UPDATE ATOMIC COUNTER
-                        ------------------------------------
-                        */
-
-                        transaction.set(
-                            counterRef,
-                            {
-
-                                studentUid:
-                                    payload.uid,
-
-                                dayKey:
-                                    today,
-
-                                count:
-                                    newCount,
-
-                                updatedAt:
                                     FieldValue.serverTimestamp()
-
-                            },
-                            {
-                                merge: true
                             }
                         );
-
 
                         return {
-
                             entryId:
                                 entryRef.id,
 
@@ -1693,28 +1003,27 @@ app.post(
                     }
                 );
 
+            /* ---------------------------------------------
+               Audit
+            --------------------------------------------- */
 
-            /*
-            ------------------------------------------------
-             AUDIT DOES NOT BLOCK RESPONSE
-            ------------------------------------------------
-            */
-
-            audit(
+            await audit(
                 req.user.uid,
                 req.user.role,
                 "ENTRY_ALLOWED",
                 payload.uid,
                 {
                     studentId:
-                        student.studentId ||
-                        "",
+                        student.studentId,
 
                     entryId:
                         result.entryId
                 }
             );
 
+            /* ---------------------------------------------
+               SUCCESS
+            --------------------------------------------- */
 
             return res.json({
 
@@ -1724,7 +1033,7 @@ app.post(
                     "ALLOWED",
 
                 message:
-                    "Entry verified successfully.",
+                    "Entry allowed.",
 
                 student: {
 
@@ -1732,20 +1041,19 @@ app.post(
                         payload.uid,
 
                     studentId:
-                        student.studentId ||
-                        "",
+                        student.studentId,
 
                     name:
                         student.name ||
                         "",
 
-                    studentType:
-                        student.studentType ||
+                    email:
+                        student.email ||
                         "",
 
-                    accountStatus:
-                        student.accountStatus ||
-                        "ACTIVE"
+                    studentType:
+                        student.studentType ||
+                        ""
                 },
 
                 entry: {
@@ -1760,8 +1068,34 @@ app.post(
                         result.dailyLimit,
 
                     remainingEntries:
-                        result.remainingEntries
-                }
+                        result.remainingEntries,
+
+                    verifiedBy:
+                        req.user.name ||
+                        req.user.uid,
+
+                    verifiedByRole:
+                        req.user.role
+                },
+
+                entryId:
+                    result.entryId,
+
+                dailyCount:
+                    result.dailyCount,
+
+                dailyLimit:
+                    result.dailyLimit,
+
+                remainingEntries:
+                    result.remainingEntries,
+
+                verifiedBy:
+                    req.user.name ||
+                    req.user.uid,
+
+                verifiedByRole:
+                    req.user.role
             });
 
         } catch (error) {
@@ -1771,302 +1105,115 @@ app.post(
                 error.message
             );
 
+            return res.status(400).json({
 
-            return res
-                .status(400)
-                .json({
+                success: false,
 
-                    success: false,
+                status:
+                    "REJECTED",
 
-                    status:
-                        "REJECTED",
-
-                    error:
-                        error.message ||
-                        "QR verification failed."
-                });
+                error:
+                    error.message ||
+                    "QR verification failed."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- RESOLVE OLD VERIFIER UID -> NAME
-============================================================
-*/
-
-async function resolveVerifierNames(
-    entries
-) {
-
-    const uidSet =
-        new Set();
-
-
-    for (
-        const entry of entries
-    ) {
-
-        const uid =
-            entry.verifierUid ||
-            entry.verifiedByUid ||
-            entry.verifiedBy;
-
-
-        /*
-        Firebase UIDs are generally
-        longer than normal names.
-        */
-
-        if (
-            uid &&
-            typeof uid ===
-                "string" &&
-            uid.length > 20
-        ) {
-
-            uidSet.add(
-                uid
-            );
-        }
-    }
-
-
-    if (
-        uidSet.size === 0
-    ) {
-
-        return entries;
-    }
-
-
-    const uidList =
-        Array.from(
-            uidSet
-        );
-
-
-    const refs =
-        uidList.map(
-            uid =>
-                db
-                    .collection(
-                        "students"
-                    )
-                    .doc(uid)
-        );
-
-
-    const snapshots =
-        await db.getAll(
-            ...refs
-        );
-
-
-    const nameMap =
-        new Map();
-
-
-    snapshots.forEach(
-        (
-            snap,
-            index
-        ) => {
-
-            if (
-                snap.exists
-            ) {
-
-                const data =
-                    snap.data();
-
-
-                nameMap.set(
-                    uidList[index],
-                    data.name ||
-                    data.displayName ||
-                    data.email ||
-                    "Unknown"
-                );
-            }
-        }
-    );
-
-
-    return entries.map(
-        entry => {
-
-            const uid =
-                entry.verifierUid ||
-                entry.verifiedByUid ||
-                entry.verifiedBy;
-
-
-            const name =
-                entry.verifierName ||
-                nameMap.get(
-                    uid
-                ) ||
-                (
-                    uid &&
-                    uid.length <= 20
-                        ? uid
-                        : "Unknown"
-                );
-
-
-            return {
-
-                ...entry,
-
-                verifiedBy:
-                    name,
-
-                verifiedByUid:
-                    uid || "",
-
-                verifierName:
-                    name
-            };
-        }
-    );
-}
-
-
-/*
-============================================================
- STUDENT HISTORY
-============================================================
-*/
+/* =========================================================
+   STUDENT / STAFF ENTRIES
+   ========================================================= */
 
 app.get(
     "/api/entries/:studentId",
     authenticate,
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
-            const studentId =
+            const requestedId =
                 clean(
                     req.params.studentId,
                     100
                 );
 
-
             if (
                 req.user.role ===
-                    "STUDENT" &&
-                studentId !==
-                    req.user.studentId
+                "STUDENT" &&
+                req.user.studentId !==
+                requestedId
             ) {
 
-                return res
-                    .status(403)
-                    .json({
-                        success: false,
-                        error:
-                            "You can only view your own history."
-                    });
+                return res.status(403).json({
+                    success: false,
+                    error:
+                        "Students can only view their own entries."
+                });
             }
 
-
-            const snapshot =
-                await db
-                    .collection(
-                        "entries"
-                    )
+            let query =
+                db
+                    .collection("entries")
                     .where(
                         "studentId",
                         "==",
-                        studentId
-                    )
-                    .limit(200)
-                    .get();
-
-
-            let entries =
-                snapshot.docs
-                    .map(
-                        doc => ({
-                            id:
-                                doc.id,
-
-                            ...doc.data()
-                        })
-                    )
-                    .sort(
-                        (
-                            a,
-                            b
-                        ) => {
-
-                            const aTime =
-                                safeDate(
-                                    a.createdAt
-                                )?.getTime() ||
-                                0;
-
-                            const bTime =
-                                safeDate(
-                                    b.createdAt
-                                )?.getTime() ||
-                                0;
-
-                            return (
-                                bTime -
-                                aTime
-                            );
-                        }
-                    )
-                    .slice(
-                        0,
-                        100
+                        requestedId
                     );
 
+            const snapshot =
+                await query.get();
 
-            entries =
-                await resolveVerifierNames(
-                    entries
-                );
+            const entries =
+                snapshot.docs
+                    .map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }))
+                    .sort(
+                        (a, b) => {
 
+                            const aTime =
+                                a.createdAt &&
+                                typeof a.createdAt.toMillis ===
+                                    "function"
+                                    ? a.createdAt.toMillis()
+                                    : 0;
 
-            return res.json({
+                            const bTime =
+                                b.createdAt &&
+                                typeof b.createdAt.toMillis ===
+                                    "function"
+                                    ? b.createdAt.toMillis()
+                                    : 0;
 
+                            return bTime - aTime;
+                        }
+                    );
+
+            res.json({
                 success: true,
-
                 entries
             });
 
         } catch (error) {
 
             console.error(
-                "History error:",
-                error.message
+                "Entries error:",
+                error
             );
 
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to load entry history."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to load entries."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- STAFF / ADMIN HISTORY
-============================================================
-*/
+/* =========================================================
+   ADMIN / SECURITY ALL ENTRIES
+   ========================================================= */
 
 app.get(
     "/api/admin/entries",
@@ -2076,253 +1223,188 @@ app.get(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
             const snapshot =
                 await db
-                    .collection(
-                        "entries"
-                    )
-                    .limit(200)
+                    .collection("entries")
+                    .limit(500)
                     .get();
 
+            const staffSnapshot =
+                await db
+                    .collection("students")
+                    .get();
 
-            let entries =
+            const staffMap =
+                new Map();
+
+            staffSnapshot.forEach(
+                doc => {
+
+                    const data =
+                        doc.data();
+
+                    staffMap.set(
+                        doc.id,
+                        data
+                    );
+                }
+            );
+
+            const entries =
                 snapshot.docs
-                    .map(
-                        doc => ({
+                    .map(doc => {
+
+                        const data =
+                            doc.data();
+
+                        const verifier =
+                            staffMap.get(
+                                data.verifierUid
+                            );
+
+                        return {
+
                             id:
                                 doc.id,
 
-                            ...doc.data()
-                        })
-                    )
+                            ...data,
+
+                            verifierName:
+                                data.verifierName ||
+                                verifier?.name ||
+                                data.verifiedBy ||
+                                data.verifierUid ||
+                                "",
+
+                            verifierRole:
+                                data.verifierRole ||
+                                verifier?.role ||
+                                data.verifiedByRole ||
+                                ""
+                        };
+                    })
                     .sort(
-                        (
-                            a,
-                            b
-                        ) => {
+                        (a, b) => {
 
                             const aTime =
-                                safeDate(
-                                    a.createdAt
-                                )?.getTime() ||
-                                0;
+                                a.createdAt &&
+                                typeof a.createdAt.toMillis ===
+                                    "function"
+                                    ? a.createdAt.toMillis()
+                                    : 0;
 
                             const bTime =
-                                safeDate(
-                                    b.createdAt
-                                )?.getTime() ||
-                                0;
+                                b.createdAt &&
+                                typeof b.createdAt.toMillis ===
+                                    "function"
+                                    ? b.createdAt.toMillis()
+                                    : 0;
 
-                            return (
-                                bTime -
-                                aTime
-                            );
+                            return bTime - aTime;
                         }
                     );
 
-
-            entries =
-                await resolveVerifierNames(
-                    entries
-                );
-
-
-            return res.json({
-
+            res.json({
                 success: true,
-
                 entries
             });
 
         } catch (error) {
 
             console.error(
-                "Staff history error:",
-                error.message
+                "Admin entries error:",
+                error
             );
 
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to load entry history."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to load entries."
+            });
         }
     }
 );
 
+/* =========================================================
+   ID GENERATOR
+   ========================================================= */
 
-/*
-============================================================
- AUTOMATIC ID GENERATOR
-============================================================
-*/
-
-async function generateNextId(
-    prefix
-) {
+async function generateNextId(prefix) {
 
     const counterRef =
         db
-            .collection(
-                "idCounters"
-            )
-            .doc(
-                prefix
-            );
+            .collection("idCounters")
+            .doc(prefix);
 
+    const result =
+        await db.runTransaction(
+            async transaction => {
 
-    return db.runTransaction(
-        async transaction => {
-
-            const snap =
-                await transaction.get(
-                    counterRef
-                );
-
-
-            let nextNumber =
-                1001;
-
-
-            if (
-                snap.exists
-            ) {
-
-                nextNumber =
-                    (
-                        Number(
-                            snap.data()
-                                .lastNumber
-                        ) ||
-                        1000
-                    ) + 1;
-
-            } else {
-
-                /*
-                First creation for this
-                prefix.
-                */
-
-                const snapshot =
-                    await db
-                        .collection(
-                            "students"
-                        )
-                        .get();
-
-
-                let maxNumber =
-                    1000;
-
-
-                const escapedPrefix =
-                    prefix.replace(
-                        /[.*+?^${}()|[\]\\]/g,
-                        "\\$&"
+                const snap =
+                    await transaction.get(
+                        counterRef
                     );
 
+                let nextNumber = 1;
 
-                snapshot.forEach(
-                    doc => {
+                if (snap.exists) {
 
-                        const id =
-                            String(
-                                doc.data()
-                                    .studentId ||
-                                ""
-                            );
+                    const data =
+                        snap.data();
 
+                    nextNumber =
+                        Number(
+                            data.lastNumber || 0
+                        ) + 1;
+                }
 
-                        const match =
-                            id.match(
-                                new RegExp(
-                                    "^" +
-                                    escapedPrefix +
-                                    "-(\\d+)$"
-                                )
-                            );
+                transaction.set(
+                    counterRef,
+                    {
+                        lastNumber:
+                            nextNumber,
 
-
-                        if (
-                            match
-                        ) {
-
-                            maxNumber =
-                                Math.max(
-                                    maxNumber,
-                                    Number(
-                                        match[1]
-                                    )
-                                );
-                        }
+                        updatedAt:
+                            FieldValue.serverTimestamp()
+                    },
+                    {
+                        merge: true
                     }
                 );
 
-
-                nextNumber =
-                    maxNumber + 1;
+                return nextNumber;
             }
+        );
 
-
-            transaction.set(
-                counterRef,
-                {
-
-                    prefix,
-
-                    lastNumber:
-                        nextNumber,
-
-                    updatedAt:
-                        FieldValue.serverTimestamp()
-
-                },
-                {
-                    merge: true
-                }
-            );
-
-
-            return nextNumber;
-        }
-    ).then(
-        number =>
-            `${prefix}-${number}`
-    );
+    return `${prefix}-${String(result).padStart(4, "0")}`;
 }
 
-
-/*
-============================================================
- SUPER ADMIN CREATE USER
-============================================================
-*/
+/* =========================================================
+   SUPER ADMIN CREATE USER
+   ========================================================= */
 
 app.post(
     "/api/super-admin/create-user",
-    adminLimiter,
     authenticate,
-    requireRoles(
-        "SUPER_ADMIN"
-    ),
-    async (
-        req,
-        res
-    ) => {
+    requireRoles("SUPER_ADMIN"),
+    async (req, res) => {
 
         try {
+
+            const email =
+                clean(
+                    req.body.email,
+                    200
+                );
+
+            const password =
+                String(
+                    req.body.password || ""
+                );
 
             const name =
                 clean(
@@ -2330,28 +1412,11 @@ app.post(
                     200
                 );
 
-            const email =
-                clean(
-                    req.body.email,
-                    200
-                )
-                .toLowerCase();
-
-
-            const password =
-                String(
-                    req.body.password ||
-                    ""
-                );
-
-
             const role =
                 clean(
                     req.body.role,
                     50
-                )
-                .toUpperCase();
-
+                ).toUpperCase();
 
             const studentType =
                 clean(
@@ -2359,89 +1424,77 @@ app.post(
                     100
                 );
 
-
             const allowedRoles = [
-
                 "STUDENT",
-
                 "SECURITY",
-
                 "ADMIN",
-
                 "SUPER_ADMIN"
-
             ];
 
-
             if (
-                !allowedRoles.includes(
-                    role
-                )
+                !allowedRoles.includes(role)
             ) {
 
-                return res
-                    .status(400)
-                    .json({
-                        success: false,
-                        error:
-                            "Invalid role."
-                    });
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Invalid user role."
+                });
             }
 
-
             if (
-                !name ||
                 !email ||
+                !name ||
                 password.length < 8
             ) {
 
-                return res
-                    .status(400)
-                    .json({
-                        success: false,
-                        error:
-                            "Valid name, email and password are required."
-                    });
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Valid name, email and password are required. Password must contain at least 8 characters."
+                });
             }
 
+            let prefix;
 
-            const prefix =
-                role === "STUDENT"
-                    ? "SRMAP-STU"
-                    : role === "SECURITY"
-                        ? "SRMAP-SEC"
-                        : role === "ADMIN"
-                            ? "SRMAP-ADM"
-                            : "SRMAP-SADM";
+            if (role === "STUDENT") {
+                prefix = "SRMAP-STU";
+            }
 
+            else if (
+                role === "SECURITY"
+            ) {
+                prefix = "SRMAP-SEC";
+            }
+
+            else if (
+                role === "ADMIN"
+            ) {
+                prefix = "SRMAP-ADM";
+            }
+
+            else {
+                prefix = "SRMAP-SADM";
+            }
 
             const generatedId =
                 await generateNextId(
                     prefix
                 );
 
-
             const user =
                 await auth.createUser({
-
                     email,
-
                     password,
-
                     displayName:
                         name
                 });
 
-
             try {
 
                 await db
-                    .collection(
-                        "students"
-                    )
-                    .doc(
-                        user.uid
-                    )
+                    .collection("students")
+                    .doc(user.uid)
                     .set({
 
                         uid:
@@ -2456,10 +1509,7 @@ app.post(
 
                         studentType:
                             role === "STUDENT"
-                                ? (
-                                    studentType ||
-                                    "Day Scholar"
-                                )
+                                ? studentType
                                 : "STAFF",
 
                         role,
@@ -2468,25 +1518,17 @@ app.post(
                             "ACTIVE",
 
                         createdAt:
-                            FieldValue.serverTimestamp(),
-
-                        createdBy:
-                            req.user.uid
+                            FieldValue.serverTimestamp()
                     });
 
-            } catch (error) {
+            } catch (firestoreError) {
 
-                try {
+                await auth.deleteUser(
+                    user.uid
+                );
 
-                    await auth.deleteUser(
-                        user.uid
-                    );
-
-                } catch (_) {}
-
-                throw error;
+                throw firestoreError;
             }
-
 
             await audit(
                 req.user.uid,
@@ -2495,94 +1537,79 @@ app.post(
                 user.uid,
                 {
                     role,
-
                     studentId:
-                        generatedId
+                        generatedId,
+                    email
                 }
             );
 
+            res.status(201).json({
 
-            return res
-                .status(201)
-                .json({
+                success: true,
 
-                    success: true,
+                message:
+                    `${role} account created successfully.`,
 
-                    message:
-                        `${role} account created successfully.`,
+                user: {
 
-                    user: {
+                    uid:
+                        user.uid,
 
-                        uid:
-                            user.uid,
+                    name,
 
-                        name,
+                    email,
 
-                        email,
+                    role,
 
-                        role,
+                    studentId:
+                        generatedId,
 
-                        studentId:
-                            generatedId,
-
-                        accountStatus:
-                            "ACTIVE"
-                    }
-                });
+                    accountStatus:
+                        "ACTIVE"
+                }
+            });
 
         } catch (error) {
 
             console.error(
-                "Create user error:",
-                error.message
+                "Super Admin create user error:",
+                error
             );
-
 
             if (
                 error.code ===
                 "auth/email-already-exists"
             ) {
 
-                return res
-                    .status(409)
-                    .json({
-                        success: false,
-                        error:
-                            "An account with this email already exists."
-                    });
-            }
-
-
-            return res
-                .status(500)
-                .json({
+                return res.status(409).json({
                     success: false,
                     error:
-                        "Unable to create user."
+                        "An account with this email already exists."
                 });
+            }
+
+            res.status(500).json({
+                success: false,
+                error:
+                    error.message ||
+                    "Unable to create user."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- CREATE STUDENT
-============================================================
-*/
+/* =========================================================
+   CREATE STUDENT
+   ========================================================= */
 
 app.post(
     "/api/students",
-    adminLimiter,
     authenticate,
     requireRoles(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
@@ -2590,16 +1617,12 @@ app.post(
                 clean(
                     req.body.email,
                     200
-                )
-                .toLowerCase();
-
+                );
 
             const password =
                 String(
-                    req.body.password ||
-                    ""
+                    req.body.password || ""
                 );
-
 
             const name =
                 clean(
@@ -2607,13 +1630,11 @@ app.post(
                     200
                 );
 
-
             const studentType =
                 clean(
                     req.body.studentType,
                     100
                 );
-
 
             if (
                 !email ||
@@ -2621,43 +1642,31 @@ app.post(
                 password.length < 8
             ) {
 
-                return res
-                    .status(400)
-                    .json({
-                        success: false,
-                        error:
-                            "Valid email, password and name are required."
-                    });
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Valid email, password and name are required."
+                });
             }
-
 
             const studentId =
                 await generateNextId(
                     "SRMAP-STU"
                 );
 
-
             const user =
                 await auth.createUser({
-
                     email,
-
                     password,
-
                     displayName:
                         name
                 });
 
-
             try {
 
                 await db
-                    .collection(
-                        "students"
-                    )
-                    .doc(
-                        user.uid
-                    )
+                    .collection("students")
+                    .doc(user.uid)
                     .set({
 
                         uid:
@@ -2681,19 +1690,14 @@ app.post(
                             FieldValue.serverTimestamp()
                     });
 
-            } catch (error) {
+            } catch (firestoreError) {
 
-                try {
+                await auth.deleteUser(
+                    user.uid
+                );
 
-                    await auth.deleteUser(
-                        user.uid
-                    );
-
-                } catch (_) {}
-
-                throw error;
+                throw firestoreError;
             }
-
 
             await audit(
                 req.user.uid,
@@ -2705,8 +1709,7 @@ app.post(
                 }
             );
 
-
-            return res.json({
+            res.json({
 
                 success: true,
 
@@ -2723,43 +1726,31 @@ app.post(
 
             console.error(
                 "Create student error:",
-                error.message
+                error
             );
 
-
-            return res
-                .status(400)
-                .json({
-
-                    success: false,
-
-                    error:
-                        error.message ||
-                        "Could not create student."
-                });
+            res.status(400).json({
+                success: false,
+                error:
+                    error.message ||
+                    "Could not create student."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- CREATE STAFF
-============================================================
-*/
+/* =========================================================
+   CREATE STAFF
+   ========================================================= */
 
 app.post(
     "/api/admins",
-    adminLimiter,
     authenticate,
     requireRoles(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
@@ -2767,16 +1758,12 @@ app.post(
                 clean(
                     req.body.email,
                     200
-                )
-                .toLowerCase();
-
+                );
 
             const password =
                 String(
-                    req.body.password ||
-                    ""
+                    req.body.password || ""
                 );
-
 
             const name =
                 clean(
@@ -2784,51 +1771,39 @@ app.post(
                     200
                 );
 
-
             const role =
                 clean(
                     req.body.role,
                     50
-                )
-                .toUpperCase();
-
+                ).toUpperCase();
 
             if (
                 ![
                     "SECURITY",
                     "ADMIN",
                     "SUPER_ADMIN"
-                ].includes(
-                    role
-                )
+                ].includes(role)
             ) {
 
-                return res
-                    .status(400)
-                    .json({
-                        success: false,
-                        error:
-                            "Invalid staff role."
-                    });
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Invalid staff role."
+                });
             }
-
 
             if (
                 req.user.role !==
-                    "SUPER_ADMIN" &&
-                role ===
-                    "SUPER_ADMIN"
+                "SUPER_ADMIN" &&
+                role === "SUPER_ADMIN"
             ) {
 
-                return res
-                    .status(403)
-                    .json({
-                        success: false,
-                        error:
-                            "Only SUPER_ADMIN can create SUPER_ADMIN accounts."
-                    });
+                return res.status(403).json({
+                    success: false,
+                    error:
+                        "Only SUPER_ADMIN can create SUPER_ADMIN accounts."
+                });
             }
-
 
             if (
                 !email ||
@@ -2836,15 +1811,12 @@ app.post(
                 password.length < 8
             ) {
 
-                return res
-                    .status(400)
-                    .json({
-                        success: false,
-                        error:
-                            "Valid email, password and name are required."
-                    });
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Valid name, email and password are required."
+                });
             }
-
 
             const prefix =
                 role === "SECURITY"
@@ -2853,34 +1825,24 @@ app.post(
                         ? "SRMAP-ADM"
                         : "SRMAP-SADM";
 
-
             const staffId =
                 await generateNextId(
                     prefix
                 );
 
-
             const user =
                 await auth.createUser({
-
                     email,
-
                     password,
-
                     displayName:
                         name
                 });
 
-
             try {
 
                 await db
-                    .collection(
-                        "students"
-                    )
-                    .doc(
-                        user.uid
-                    )
+                    .collection("students")
+                    .doc(user.uid)
                     .set({
 
                         uid:
@@ -2905,19 +1867,14 @@ app.post(
                             FieldValue.serverTimestamp()
                     });
 
-            } catch (error) {
+            } catch (firestoreError) {
 
-                try {
+                await auth.deleteUser(
+                    user.uid
+                );
 
-                    await auth.deleteUser(
-                        user.uid
-                    );
-
-                } catch (_) {}
-
-                throw error;
+                throw firestoreError;
             }
-
 
             await audit(
                 req.user.uid,
@@ -2926,14 +1883,12 @@ app.post(
                 user.uid,
                 {
                     role,
-
                     studentId:
                         staffId
                 }
             );
 
-
-            return res.json({
+            res.json({
 
                 success: true,
 
@@ -2953,86 +1908,58 @@ app.post(
 
             console.error(
                 "Create staff error:",
-                error.message
+                error
             );
 
-
-            return res
-                .status(400)
-                .json({
-
-                    success: false,
-
-                    error:
-                        error.message ||
-                        "Could not create staff."
-                });
+            res.status(400).json({
+                success: false,
+                error:
+                    error.message ||
+                    "Could not create staff."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- ALL USERS
-============================================================
-*/
+/* =========================================================
+   ALL USERS
+   ========================================================= */
 
 app.get(
     "/api/admin/users",
-    adminLimiter,
     authenticate,
     requireRoles(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
             const snapshot =
                 await db
-                    .collection(
-                        "students"
-                    )
-                    .limit(500)
+                    .collection("students")
                     .get();
-
 
             const users =
                 snapshot.docs
-                    .map(
-                        doc => ({
-                            uid:
-                                doc.id,
-
-                            ...doc.data()
-                        })
-                    )
+                    .map(doc => ({
+                        uid: doc.id,
+                        ...doc.data()
+                    }))
                     .sort(
-                        (
-                            a,
-                            b
-                        ) =>
+                        (a, b) =>
                             String(
-                                a.name ||
-                                ""
+                                a.name || ""
                             ).localeCompare(
                                 String(
-                                    b.name ||
-                                    ""
+                                    b.name || ""
                                 )
                             )
                     );
 
-
-            return res.json({
-
+            res.json({
                 success: true,
-
                 users
             });
 
@@ -3040,74 +1967,53 @@ app.get(
 
             console.error(
                 "Users list error:",
-                error.message
+                error
             );
 
-
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to load users."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to load users."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- STUDENTS
-============================================================
-*/
+/* =========================================================
+   STUDENTS LIST
+   ========================================================= */
 
 app.get(
     "/api/students",
-    adminLimiter,
     authenticate,
     requireRoles(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
             const snapshot =
                 await db
-                    .collection(
-                        "students"
-                    )
+                    .collection("students")
                     .where(
                         "role",
                         "==",
                         "STUDENT"
                     )
-                    .limit(500)
                     .get();
-
 
             const students =
                 snapshot.docs.map(
                     doc => ({
-                        uid:
-                            doc.id,
-
+                        uid: doc.id,
                         ...doc.data()
                     })
                 );
 
-
-            return res.json({
-
+            res.json({
                 success: true,
-
                 students
             });
 
@@ -3115,50 +2021,36 @@ app.get(
 
             console.error(
                 "Students list error:",
-                error.message
+                error
             );
 
-
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to load students."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to load students."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- STAFF
-============================================================
-*/
+/* =========================================================
+   STAFF LIST
+   ========================================================= */
 
 app.get(
     "/api/admin/staff",
-    adminLimiter,
     authenticate,
     requireRoles(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
             const snapshot =
                 await db
-                    .collection(
-                        "students"
-                    )
+                    .collection("students")
                     .where(
                         "role",
                         "in",
@@ -3168,25 +2060,18 @@ app.get(
                             "SUPER_ADMIN"
                         ]
                     )
-                    .limit(500)
                     .get();
-
 
             const staff =
                 snapshot.docs.map(
                     doc => ({
-                        uid:
-                            doc.id,
-
+                        uid: doc.id,
                         ...doc.data()
                     })
                 );
 
-
-            return res.json({
-
+            res.json({
                 success: true,
-
                 staff
             });
 
@@ -3194,42 +2079,30 @@ app.get(
 
             console.error(
                 "Staff list error:",
-                error.message
+                error
             );
 
-
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to load staff."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to load staff."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- BLOCK / ACTIVATE USER
-============================================================
-*/
+/* =========================================================
+   BLOCK / ACTIVATE USER
+   ========================================================= */
 
 app.post(
     "/api/users/:uid/status",
-    adminLimiter,
     authenticate,
     requireRoles(
         "ADMIN",
         "SUPER_ADMIN"
     ),
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
         try {
 
@@ -3239,95 +2112,70 @@ app.post(
                     200
                 );
 
-
             const status =
                 clean(
                     req.body.status,
                     50
-                )
-                .toUpperCase();
-
+                ).toUpperCase();
 
             if (
-                uid ===
-                req.user.uid
+                uid === req.user.uid
             ) {
 
-                return res
-                    .status(403)
-                    .json({
-                        success: false,
-                        error:
-                            "You cannot change your own account status."
-                    });
+                return res.status(403).json({
+                    success: false,
+                    error:
+                        "You cannot change your own account status."
+                });
             }
-
 
             if (
                 ![
                     "ACTIVE",
                     "BLOCKED"
-                ].includes(
-                    status
-                )
+                ].includes(status)
             ) {
 
-                return res
-                    .status(400)
-                    .json({
-                        success: false,
-                        error:
-                            "Invalid account status."
-                    });
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        "Invalid account status."
+                });
             }
-
 
             const ref =
                 db
-                    .collection(
-                        "students"
-                    )
+                    .collection("students")
                     .doc(uid);
-
 
             const snap =
                 await ref.get();
 
+            if (!snap.exists) {
 
-            if (
-                !snap.exists
-            ) {
-
-                return res
-                    .status(404)
-                    .json({
-                        success: false,
-                        error:
-                            "User not found."
-                    });
+                return res.status(404).json({
+                    success: false,
+                    error:
+                        "User not found."
+                });
             }
-
 
             const target =
                 snap.data();
 
-
             if (
                 target.role ===
-                    "SUPER_ADMIN" &&
+                "SUPER_ADMIN" &&
                 req.user.role !==
-                    "SUPER_ADMIN"
+                "SUPER_ADMIN"
             ) {
 
-                return res
-                    .status(403)
-                    .json({
-                        success: false,
-                        error:
-                            "Only SUPER_ADMIN can modify SUPER_ADMIN."
-                    });
+                return res.status(403).json({
+                    success: false,
+                    error:
+                        "Only SUPER_ADMIN can modify SUPER_ADMIN."
+                });
             }
-
 
             await ref.update({
 
@@ -3338,40 +2186,29 @@ app.post(
                     FieldValue.serverTimestamp()
             });
 
-
             await auth.updateUser(
                 uid,
                 {
                     disabled:
-                        status ===
-                        "BLOCKED"
+                        status === "BLOCKED"
                 }
             );
-
-
-            profileCache.delete(
-                uid
-            );
-
 
             await audit(
                 req.user.uid,
                 req.user.role,
-                status ===
-                    "BLOCKED"
+                status === "BLOCKED"
                     ? "USER_BLOCKED"
                     : "USER_UNBLOCKED",
                 uid
             );
 
-
-            return res.json({
+            res.json({
 
                 success: true,
 
                 message:
-                    status ===
-                    "BLOCKED"
+                    status === "BLOCKED"
                         ? "User blocked."
                         : "User activated."
             });
@@ -3380,278 +2217,163 @@ app.post(
 
             console.error(
                 "Status update error:",
-                error.message
+                error
             );
 
-
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to update account status."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to update account status."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- AUDIT LOGS
-============================================================
-*/
+/* =========================================================
+   AUDIT LOGS
+   ========================================================= */
 
 app.get(
     "/api/admin/audit-logs",
-    adminLimiter,
     authenticate,
     requireRoles(
-        "SUPER_ADMIN"
-    ),
-    async (
-        req,
-        res
-    ) => {
+    "SUPER_ADMIN"
+),
+    async (req, res) => {
 
         try {
 
             const snapshot =
                 await db
-                    .collection(
-                        "auditLogs"
-                    )
-                    .limit(200)
+                    .collection("auditLogs")
+                    .limit(100)
                     .get();
-
 
             const logs =
                 snapshot.docs
-                    .map(
-                        doc => ({
-                            id:
-                                doc.id,
-
-                            ...doc.data()
-                        })
-                    )
+                    .map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }))
                     .sort(
-                        (
-                            a,
-                            b
-                        ) => {
+                        (a, b) => {
 
                             const aTime =
-                                safeDate(
-                                    a.createdAt
-                                )?.getTime() ||
-                                0;
+                                a.createdAt &&
+                                typeof a.createdAt.toMillis ===
+                                    "function"
+                                    ? a.createdAt.toMillis()
+                                    : 0;
 
                             const bTime =
-                                safeDate(
-                                    b.createdAt
-                                )?.getTime() ||
-                                0;
+                                b.createdAt &&
+                                typeof b.createdAt.toMillis ===
+                                    "function"
+                                    ? b.createdAt.toMillis()
+                                    : 0;
 
-                            return (
-                                bTime -
-                                aTime
-                            );
+                            return bTime - aTime;
                         }
                     );
 
-
-            return res.json({
-
+            res.json({
                 success: true,
-
                 logs
             });
 
         } catch (error) {
 
             console.error(
-                "Audit list error:",
-                error.message
+                "Audit logs error:",
+                error
             );
 
-
-            return res
-                .status(500)
-                .json({
-
-                    success: false,
-
-                    error:
-                        "Unable to load audit logs."
-                });
+            res.status(500).json({
+                success: false,
+                error:
+                    "Unable to load audit logs."
+            });
         }
     }
 );
 
-
-/*
-============================================================
- LOGOUT
-============================================================
-*/
+/* =========================================================
+   LOGOUT
+   ========================================================= */
 
 app.post(
     "/api/logout",
-    authLimiter,
     authenticate,
-    async (
-        req,
-        res
-    ) => {
+    async (req, res) => {
 
-        audit(
+        await audit(
             req.user.uid,
             req.user.role,
             "LOGOUT"
         );
 
-
-        return res.json({
-
+        res.json({
             success: true
         });
     }
 );
 
+/* =========================================================
+   STATIC WEBSITE
+   ========================================================= */
 
-/*
-============================================================
- STATIC WEBSITE
-============================================================
-*/
-
-/*
-IMPORTANT:
-Only files inside /public are exposed.
-
-firebase-service-account.json
-.env
-server.js
-package.json
-
-are NOT publicly accessible.
-*/
-
-if (
-    fs.existsSync(
-        PUBLIC_DIR
+app.use(
+    express.static(
+        require("path").join(__dirname, "public"),
+        {
+            extensions: ["html"],
+            dotfiles: "deny"
+        }
     )
-) {
-
-    app.use(
-        express.static(
-            PUBLIC_DIR,
-            {
-
-                extensions: [
-                    "html"
-                ],
-
-                dotfiles:
-                    "deny",
-
-                index:
-                    "index.html",
-
-                maxAge:
-                    process.env.NODE_ENV ===
-                    "production"
-                        ? "1h"
-                        : 0
-            }
-        )
-    );
-
-} else {
-
-    console.error(
-        "WARNING: public folder does not exist."
-    );
-}
-
-
-/*
-============================================================
- API 404
-============================================================
-*/
+);
+/* =========================================================
+   API 404
+   ========================================================= */
 
 app.use(
     "/api",
-    (
-        req,
-        res
-    ) => {
+    (req, res) => {
 
-        return res
-            .status(404)
-            .json({
-
-                success: false,
-
-                error:
-                    "API endpoint not found."
-            });
+        res.status(404).json({
+            success: false,
+            error:
+                "API endpoint not found."
+        });
     }
 );
 
-
-/*
-============================================================
- GLOBAL ERROR HANDLER
-============================================================
-*/
+/* =========================================================
+   GLOBAL ERROR HANDLER
+   ========================================================= */
 
 app.use(
-    (
-        error,
-        req,
-        res,
-        next
-    ) => {
+    (error, req, res, next) => {
 
         console.error(
-            "Unhandled Express error:",
-            error.message
+            "Global error:",
+            error
         );
 
-
-        if (
-            res.headersSent
-        ) {
-
-            return next(
-                error
-            );
+        if (res.headersSent) {
+            return next(error);
         }
 
-
-        return res
-            .status(500)
-            .json({
-
-                success: false,
-
-                error:
-                    "Internal server error."
-            });
+        res.status(500).json({
+            success: false,
+            error:
+                "Internal server error."
+        });
     }
 );
 
-
-/*
-============================================================
- START SERVER
-============================================================
-*/
+/* =========================================================
+   START SERVER
+   ========================================================= */
 
 const server =
     app.listen(
@@ -3664,34 +2386,34 @@ const server =
                 "========================================"
             );
             console.log(
-                " SRM AP DAYPASS SERVER"
+                "       SRM AP DAYPASS SERVER"
             );
             console.log(
                 "========================================"
             );
             console.log(
-                `Server running on port ${PORT}`
+                `✅ Server running on port ${PORT}`
             );
             console.log(
-                "Firebase authentication enabled"
+                `🌐 http://localhost:${PORT}`
             );
             console.log(
-                "Secure QR enabled"
+                "🔥 Firebase Admin connected"
             );
             console.log(
-                "Atomic daily entry limit enabled"
+                "🎫 Student QR enabled"
             );
             console.log(
-                "One-time QR protection enabled"
+                "🛡️ Security QR verification enabled"
             );
             console.log(
-                "Human verifier names enabled"
+                "👑 Super Admin enabled"
             );
             console.log(
-                "Rate limiting enabled"
+                "📋 Entry history enabled"
             );
             console.log(
-                "Protected public directory enabled"
+                "🔐 Audit logging enabled"
             );
             console.log(
                 "========================================"
@@ -3700,43 +2422,18 @@ const server =
         }
     );
 
-
-/*
-============================================================
- SERVER TIMEOUTS
-============================================================
-*/
-
-server.requestTimeout =
-    30 * 1000;
-
-server.headersTimeout =
-    35 * 1000;
-
-server.keepAliveTimeout =
-    5 * 1000;
-
-
-/*
-============================================================
- SERVER ERROR
-============================================================
-*/
+/* =========================================================
+   SERVER ERROR
+   ========================================================= */
 
 server.on(
     "error",
     error => {
 
         console.error(
-            "HTTP server error:",
-            error.message
+            "❌ Server error:",
+            error
         );
-
-
-        /*
-        Do not immediately kill the server
-        for ordinary HTTP errors.
-        */
 
         if (
             error.code ===
@@ -3746,140 +2443,36 @@ server.on(
             console.error(
                 `Port ${PORT} is already in use.`
             );
-
-            process.exit(1);
         }
+
+        process.exit(1);
     }
 );
 
-
-/*
-============================================================
- PROCESS ERROR HANDLING
-============================================================
-*/
-
-/*
-A truly fatal Node process error should not
-leave the application in an unknown state.
-
-The hosting platform can restart it.
-*/
-
-process.on(
-    "uncaughtException",
-    error => {
-
-        console.error(
-            "FATAL uncaught exception:",
-            error
-        );
-
-        server.close(
-            () => {
-                process.exit(1);
-            }
-        );
-    }
-);
-
-
-process.on(
-    "unhandledRejection",
-    reason => {
-
-        console.error(
-            "FATAL unhandled promise rejection:",
-            reason
-        );
-
-        server.close(
-            () => {
-                process.exit(1);
-            }
-        );
-    }
-);
-
-
-/*
-============================================================
- GRACEFUL SHUTDOWN
-============================================================
-*/
-
-let shuttingDown =
-    false;
-
-
-async function shutdown(
-    signal
-) {
-
-    if (
-        shuttingDown
-    ) {
-        return;
-    }
-
-
-    shuttingDown =
-        true;
-
-
-    console.log(
-        `${signal} received. Shutting down safely...`
-    );
-
-
-    server.close(
-        async () => {
-
-            try {
-
-                /*
-                Give active Firebase requests
-                a short opportunity to finish.
-                */
-
-                await new Promise(
-                    resolve =>
-                        setTimeout(
-                            resolve,
-                            1000
-                        )
-                );
-
-            } catch (_) {}
-
-
-            process.exit(0);
-        }
-    );
-
-
-    setTimeout(
-        () => {
-            process.exit(1);
-        },
-        10000
-    ).unref();
-}
-
+/* =========================================================
+   SHUTDOWN
+   ========================================================= */
 
 process.on(
     "SIGINT",
-    () =>
-        shutdown(
-            "SIGINT"
-        )
-);
+    () => {
 
+        console.log(
+            "\nShutting down server..."
+        );
+
+        server.close(
+            () => process.exit(0)
+        );
+    }
+);
 
 process.on(
     "SIGTERM",
-    () =>
-        shutdown(
-            "SIGTERM"
-        )
+    () => {
+
+        server.close(
+            () => process.exit(0)
+        );
+    }
 );
