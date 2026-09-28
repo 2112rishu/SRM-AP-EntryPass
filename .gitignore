@@ -1,21 +1,29 @@
+# Dependencies
 node_modules/
+
+# Environment variables / secrets
 .env
 .env.*
 !.env.example
 
+# Firebase service account
 firebase-service-account.json
-*-service-account.json
-service-account.json
 
-*.pem
-*.key
-*.p12
+# Logs
 *.log
-
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
+pnpm-debug.log*
 
+# Local backup server files
+server-backup.js
+server-backup-final.js
+server-security-backup.js
+
+# OS files
 .DS_Store
 Thumbs.db
-.vscode/
+
+# Editor / IDE local files
+.vscode/*
+!.vscode/settings.json

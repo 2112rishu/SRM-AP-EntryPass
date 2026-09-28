@@ -1,0 +1,1799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>SRM AP - Entry History</title>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
+        rel="stylesheet"
+    >
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, Arial, sans-serif;
+            color: white;
+
+            background:
+                radial-gradient(
+                    circle at top left,
+                    #263b72 0%,
+                    transparent 35%
+                ),
+                radial-gradient(
+                    circle at bottom right,
+                    #173d3d 0%,
+                    transparent 35%
+                ),
+                #080d18;
+        }
+
+        .navbar {
+            background: rgba(8, 13, 24, .9);
+            backdrop-filter: blur(18px);
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+
+        .brand {
+            font-weight: 850;
+            font-size: 19px;
+        }
+
+        .container-main {
+            max-width: 1400px;
+            margin: auto;
+            padding: 30px 18px 60px;
+        }
+
+        .glass {
+            background: rgba(255,255,255,.055);
+            border: 1px solid rgba(255,255,255,.09);
+            border-radius: 22px;
+            backdrop-filter: blur(18px);
+            box-shadow: 0 20px 60px rgba(0,0,0,.25);
+        }
+
+        .hero {
+            padding: 28px;
+            margin-bottom: 22px;
+        }
+
+        .hero h1 {
+            font-size: clamp(28px, 5vw, 42px);
+            font-weight: 850;
+            margin-bottom: 8px;
+        }
+
+        .muted {
+            color: #98a4b8;
+        }
+
+        .badge-online {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 30px;
+            color: #5be39a;
+            background: rgba(25,135,84,.15);
+            border: 1px solid rgba(25,135,84,.35);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #38e58d;
+            box-shadow: 0 0 12px #38e58d;
+        }
+
+        .stats-card {
+            padding: 20px;
+            height: 100%;
+        }
+
+        .stats-icon {
+            width: 45px;
+            height: 45px;
+            border-radius: 14px;
+            background: rgba(255,255,255,.07);
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            font-size: 21px;
+            margin-bottom: 12px;
+        }
+
+        .stats-label {
+            color: #8f9bb0;
+            font-size: 13px;
+        }
+
+        .stats-value {
+            font-size: 25px;
+            font-weight: 800;
+            margin-top: 3px;
+        }
+
+        .history-card {
+            padding: 22px;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #8995a8;
+        }
+
+        .search-box input {
+            padding-left: 44px;
+        }
+
+        .form-control,
+        .form-select {
+            background: rgba(255,255,255,.055);
+            border: 1px solid rgba(255,255,255,.12);
+            color: white;
+            border-radius: 13px;
+            padding: 12px 15px;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background: rgba(255,255,255,.08);
+            color: white;
+            border-color: rgba(255,255,255,.3);
+            box-shadow: none;
+        }
+
+        .form-control::placeholder {
+            color: #778398;
+        }
+
+        .form-select option {
+            background: #101725;
+            color: white;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 22px;
+            border-radius: 17px;
+        }
+
+        table {
+            width: 100%;
+            min-width: 1000px;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            background: rgba(255,255,255,.07);
+            color: #aeb8ca;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .6px;
+            padding: 15px;
+            white-space: nowrap;
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+
+        tbody td {
+            padding: 16px 15px;
+            border-bottom: 1px solid rgba(255,255,255,.06);
+            color: #e8edf5;
+            vertical-align: middle;
+        }
+
+        tbody tr:hover {
+            background: rgba(255,255,255,.035);
+        }
+
+        .student-name {
+            font-weight: 750;
+        }
+
+        .student-id {
+            color: #8f9bb0;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 11px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .status-allowed {
+            color: #5be39a;
+            background: rgba(25,135,84,.15);
+            border: 1px solid rgba(25,135,84,.3);
+        }
+
+        .status-rejected {
+            color: #ff7f8b;
+            background: rgba(220,53,69,.13);
+            border: 1px solid rgba(220,53,69,.3);
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 20px;
+            background: rgba(255,255,255,.07);
+            color: #d7deea;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8ba0;
+        }
+
+        .empty-state i {
+            font-size: 45px;
+            display: block;
+            margin-bottom: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca8bb;
+        }
+
+        .spinner-border {
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            border-radius: 12px;
+            font-weight: 700;
+            padding: 10px 16px;
+        }
+
+        .footer {
+            text-align: center;
+            color: #647086;
+            font-size: 13px;
+            margin-top: 30px;
+        }
+
+        @media(max-width: 768px) {
+
+            .hero,
+            .history-card {
+                padding: 18px;
+            }
+
+            .hero h1 {
+                font-size: 30px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- =====================================================
+     NAVBAR
+===================================================== -->
+
+<nav class="navbar navbar-dark">
+
+    <div class="container-fluid px-3 px-md-4">
+
+        <div class="brand">
+            <i class="bi bi-clock-history me-2"></i>
+            SRM AP EntryPass
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+
+            <span class="badge-online">
+                <span class="dot"></span>
+                Super Admin
+            </span>
+
+            <button
+                id="logoutBtn"
+                class="btn btn-outline-light btn-sm"
+            >
+                <i class="bi bi-box-arrow-right me-1"></i>
+                Logout
+            </button>
+
+        </div>
+
+    </div>
+
+</nav>
+
+
+<!-- =====================================================
+     MAIN
+===================================================== -->
+
+<main class="container-main">
+
+
+    <!-- HERO -->
+
+    <section class="glass hero">
+
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+
+            <div>
+
+                <div class="muted mb-2">
+                    <i class="bi bi-shield-lock me-1"></i>
+                    Super Admin Control
+                </div>
+
+                <h1>
+                    Entry History
+                </h1>
+
+                <div class="muted">
+                    Complete Day Pass verification history.
+                </div>
+
+            </div>
+
+            <button
+                id="refreshBtn"
+                class="btn btn-outline-light"
+            >
+                <i class="bi bi-arrow-clockwise me-1"></i>
+                Refresh
+            </button>
+
+        </div>
+
+    </section>
+
+
+    <!-- =================================================
+         STATS
+    ================================================== -->
+
+    <div class="row g-3 mb-4">
+
+        <div class="col-12 col-md-4">
+
+            <div class="glass stats-card">
+
+                <div class="stats-icon">
+                    <i class="bi bi-list-check"></i>
+                </div>
+
+                <div class="stats-label">
+                    Total Entries
+                </div>
+
+                <div
+                    id="totalEntries"
+                    class="stats-value"
+                >
+                    0
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="col-12 col-md-4">
+
+            <div class="glass stats-card">
+
+                <div class="stats-icon">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+
+                <div class="stats-label">
+                    Allowed
+                </div>
+
+                <div
+                    id="allowedEntries"
+                    class="stats-value"
+                >
+                    0
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="col-12 col-md-4">
+
+            <div class="glass stats-card">
+
+                <div class="stats-icon">
+                    <i class="bi bi-x-circle"></i>
+                </div>
+
+                <div class="stats-label">
+                    Rejected
+                </div>
+
+                <div
+                    id="rejectedEntries"
+                    class="stats-value"
+                >
+                    0
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =================================================
+         HISTORY
+    ================================================== -->
+
+    <section class="glass history-card">
+
+        <div class="d-flex flex-column flex-md-row gap-3 justify-content-between">
+
+            <div class="search-box flex-grow-1">
+
+                <i class="bi bi-search"></i>
+
+                <input
+                    id="searchInput"
+                    type="text"
+                    class="form-control"
+                    placeholder="Search by student name, student ID, or verified by..."
+                >
+
+            </div>
+
+
+            <select
+                id="statusFilter"
+                class="form-select"
+                style="max-width: 190px;"
+            >
+
+                <option value="ALL">
+                    All Status
+                </option>
+
+                <option value="ALLOWED">
+                    Allowed
+                </option>
+
+                <option value="REJECTED">
+                    Rejected
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <!-- LOADING -->
+
+        <div
+            id="loading"
+            class="loading"
+        >
+
+            <div
+                class="spinner-border"
+                role="status"
+            ></div>
+
+            <div>
+                Loading entry history...
+            </div>
+
+        </div>
+
+
+        <!-- ERROR -->
+
+        <div
+            id="errorBox"
+            class="alert alert-danger mt-4"
+            style="display:none;"
+        ></div>
+
+
+        <!-- TABLE -->
+
+        <div
+            id="tableContainer"
+            class="table-container"
+            style="display:none;"
+        >
+
+            <table>
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            #
+                        </th>
+
+                        <th>
+                            Student
+                        </th>
+
+                        <th>
+                            Student Type
+                        </th>
+
+                        <th>
+                            Date & Time
+                        </th>
+
+                        <th>
+                            Status
+                        </th>
+
+                        <th>
+                            Verified By
+                        </th>
+
+                        <th>
+                            Verified Role
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody
+                    id="historyTableBody"
+                ></tbody>
+
+            </table>
+
+        </div>
+
+
+        <!-- EMPTY -->
+
+        <div
+            id="emptyState"
+            class="empty-state"
+            style="display:none;"
+        >
+
+            <i class="bi bi-clock-history"></i>
+
+            <h5>
+                No History Found
+            </h5>
+
+            <div>
+                No entry records match your search.
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <div class="footer">
+        SRM AP EntryPass • Secure Entry History
+    </div>
+
+</main>
+
+
+<!-- =====================================================
+     FIREBASE
+===================================================== -->
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+
+<script src="firebase-config.js"></script>
+
+
+<script>
+
+"use strict";
+
+
+/* =====================================================
+   VARIABLES
+===================================================== */
+
+let allEntries = [];
+
+let currentUser = null;
+
+
+/* =====================================================
+   FIREBASE INITIALIZATION
+===================================================== */
+
+try {
+
+    if (
+        typeof firebase === "undefined"
+    ) {
+
+        throw new Error(
+            "Firebase SDK was not loaded."
+        );
+    }
+
+
+    if (
+        typeof firebaseConfig === "undefined"
+    ) {
+
+        throw new Error(
+            "firebaseConfig is missing."
+        );
+    }
+
+
+    if (
+        !firebase.apps.length
+    ) {
+
+        firebase.initializeApp(
+            firebaseConfig
+        );
+    }
+
+
+    console.log(
+        "Firebase initialized."
+    );
+
+} catch (error) {
+
+    console.error(
+        "Firebase initialization error:",
+        error
+    );
+
+    showError(
+        "Firebase initialization failed."
+    );
+}
+
+
+/* =====================================================
+   ELEMENTS
+===================================================== */
+
+const loading =
+    document.getElementById(
+        "loading"
+    );
+
+const errorBox =
+    document.getElementById(
+        "errorBox"
+    );
+
+const tableContainer =
+    document.getElementById(
+        "tableContainer"
+    );
+
+const emptyState =
+    document.getElementById(
+        "emptyState"
+    );
+
+const tableBody =
+    document.getElementById(
+        "historyTableBody"
+    );
+
+const searchInput =
+    document.getElementById(
+        "searchInput"
+    );
+
+const statusFilter =
+    document.getElementById(
+        "statusFilter"
+    );
+
+
+/* =====================================================
+   ERROR
+===================================================== */
+
+function showError(message) {
+
+    errorBox.textContent =
+        message;
+
+    errorBox.style.display =
+        "block";
+}
+
+
+/* =====================================================
+   HIDE ERROR
+===================================================== */
+
+function hideError() {
+
+    errorBox.style.display =
+        "none";
+}
+
+
+/* =====================================================
+   TOKEN
+===================================================== */
+
+async function getFreshToken(
+    forceRefresh = false
+) {
+
+    const user =
+        firebase
+            .auth()
+            .currentUser;
+
+
+    if (!user) {
+
+        throw new Error(
+            "You are not logged in."
+        );
+    }
+
+
+    return await user.getIdToken(
+        forceRefresh
+    );
+}
+
+
+/* =====================================================
+   AUTHENTICATED FETCH
+===================================================== */
+
+async function authenticatedFetch(
+    url,
+    options = {},
+    retry = true
+) {
+
+    let token =
+        await getFreshToken(
+            false
+        );
+
+
+    const headers = {
+        ...(options.headers || {}),
+        Authorization:
+            `Bearer ${token}`
+    };
+
+
+    if (
+        options.body &&
+        !headers["Content-Type"]
+    ) {
+
+        headers["Content-Type"] =
+            "application/json";
+    }
+
+
+    let response =
+        await fetch(
+            url,
+            {
+                ...options,
+                headers
+            }
+        );
+
+
+    /*
+     * Refresh expired token once.
+     */
+
+    if (
+        response.status === 401 &&
+        retry
+    ) {
+
+        console.log(
+            "Token expired. Refreshing..."
+        );
+
+
+        token =
+            await getFreshToken(
+                true
+            );
+
+
+        const retryHeaders = {
+            ...(options.headers || {}),
+            Authorization:
+                `Bearer ${token}`
+        };
+
+
+        if (
+            options.body &&
+            !retryHeaders["Content-Type"]
+        ) {
+
+            retryHeaders["Content-Type"] =
+                "application/json";
+        }
+
+
+        response =
+            await fetch(
+                url,
+                {
+                    ...options,
+                    headers:
+                        retryHeaders
+                }
+            );
+    }
+
+
+    return response;
+}
+
+
+/* =====================================================
+   LOAD USER
+===================================================== */
+
+async function loadCurrentUser() {
+
+    try {
+
+        const response =
+            await authenticatedFetch(
+                "/api/me"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        console.log(
+            "API /api/me:",
+            data
+        );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                data?.message ||
+                data?.error ||
+                "Unable to load user."
+            );
+        }
+
+
+        const user =
+            data.user || data;
+
+
+        const role =
+            String(
+                user.role || ""
+            ).toUpperCase();
+
+
+        /*
+         * HISTORY IS SUPER ADMIN ONLY.
+         */
+
+        if (
+            role !== "SUPER_ADMIN"
+        ) {
+
+            showError(
+                "Access denied. Only Super Admin can view complete history."
+            );
+
+
+            setTimeout(
+                () => {
+
+                    window.location.href =
+                        "admin-login.html";
+
+                },
+                2000
+            );
+
+
+            return false;
+        }
+
+
+        currentUser =
+            user;
+
+
+        console.log(
+            "Super Admin authenticated:",
+            user
+        );
+
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "User loading error:",
+            error
+        );
+
+
+        showError(
+            error.message ||
+            "Unable to authenticate."
+        );
+
+
+        return false;
+    }
+}
+
+
+/* =====================================================
+   LOAD HISTORY
+===================================================== */
+
+async function loadHistory() {
+
+    try {
+
+        loading.style.display =
+            "block";
+
+        tableContainer.style.display =
+            "none";
+
+        emptyState.style.display =
+            "none";
+
+        hideError();
+
+
+        const response =
+            await authenticatedFetch(
+                "/api/admin/entries"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        console.log(
+            "History API:",
+            data
+        );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                data?.message ||
+                data?.error ||
+                "Unable to load history."
+            );
+        }
+
+
+        /*
+         * Support different backend
+         * response formats.
+         */
+
+        if (
+            Array.isArray(data)
+        ) {
+
+            allEntries =
+                data;
+
+        } else if (
+            Array.isArray(data.entries)
+        ) {
+
+            allEntries =
+                data.entries;
+
+        } else if (
+            Array.isArray(data.data)
+        ) {
+
+            allEntries =
+                data.data;
+
+        } else {
+
+            allEntries = [];
+        }
+
+
+        updateStats();
+
+        renderHistory();
+
+
+    } catch (error) {
+
+        console.error(
+            "History loading error:",
+            error
+        );
+
+
+        showError(
+            error.message ||
+            "Unable to load entry history."
+        );
+
+    } finally {
+
+        loading.style.display =
+            "none";
+    }
+}
+
+
+/* =====================================================
+   UPDATE STATS
+===================================================== */
+
+function updateStats() {
+
+    const total =
+        allEntries.length;
+
+
+    const allowed =
+        allEntries.filter(
+            entry =>
+                String(
+                    entry.status || ""
+                ).toUpperCase()
+                === "ALLOWED"
+        ).length;
+
+
+    const rejected =
+        allEntries.filter(
+            entry =>
+                String(
+                    entry.status || ""
+                ).toUpperCase()
+                === "REJECTED"
+        ).length;
+
+
+    document.getElementById(
+        "totalEntries"
+    ).textContent =
+        total;
+
+
+    document.getElementById(
+        "allowedEntries"
+    ).textContent =
+        allowed;
+
+
+    document.getElementById(
+        "rejectedEntries"
+    ).textContent =
+        rejected;
+}
+
+
+/* =====================================================
+   GET STUDENT NAME
+===================================================== */
+
+function getStudentName(entry) {
+
+    /*
+     * Priority:
+     *
+     * 1. studentName
+     * 2. student.name
+     * 3. name
+     *
+     * UID IS NOT DISPLAYED.
+     */
+
+    return (
+        entry.studentName ||
+        entry.student?.name ||
+        entry.name ||
+        "Unknown Student"
+    );
+}
+
+
+/* =====================================================
+   GET STUDENT ID
+===================================================== */
+
+function getStudentId(entry) {
+
+    return (
+        entry.studentId ||
+        entry.student?.studentId ||
+        "N/A"
+    );
+}
+
+
+/* =====================================================
+   GET STUDENT TYPE
+===================================================== */
+
+function getStudentType(entry) {
+
+    return (
+        entry.studentType ||
+        entry.student?.studentType ||
+        "N/A"
+    );
+}
+
+
+/* =====================================================
+   DATE FORMAT
+===================================================== */
+
+function formatDateTime(value) {
+
+    if (!value) {
+
+        return "N/A";
+    }
+
+
+    try {
+
+        /*
+         * Firestore Timestamp:
+         */
+
+        if (
+            typeof value === "object" &&
+            value.seconds
+        ) {
+
+            const date =
+                new Date(
+                    value.seconds * 1000
+                );
+
+
+            return formatDate(
+                date
+            );
+        }
+
+
+        /*
+         * Firestore Timestamp
+         * serialized format:
+         */
+
+        if (
+            typeof value === "object" &&
+            value._seconds
+        ) {
+
+            const date =
+                new Date(
+                    value._seconds * 1000
+                );
+
+
+            return formatDate(
+                date
+            );
+        }
+
+
+        const date =
+            new Date(value);
+
+
+        if (
+            isNaN(
+                date.getTime()
+            )
+        ) {
+
+            return "N/A";
+        }
+
+
+        return formatDate(
+            date
+        );
+
+    } catch (error) {
+
+        return "N/A";
+    }
+}
+
+
+function formatDate(date) {
+
+    return date.toLocaleString(
+        "en-IN",
+        {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+        }
+    );
+}
+
+
+/* =====================================================
+   STATUS
+===================================================== */
+
+function getStatus(entry) {
+
+    return String(
+        entry.status ||
+        entry.entryStatus ||
+        "ALLOWED"
+    ).toUpperCase();
+}
+
+
+/* =====================================================
+   VERIFIED BY
+===================================================== */
+
+function getVerifiedBy(entry) {
+
+    return (
+        entry.verifiedBy ||
+        entry.verifiedByName ||
+        "N/A"
+    );
+}
+
+
+/* =====================================================
+   VERIFIED ROLE
+===================================================== */
+
+function getVerifiedRole(entry) {
+
+    return (
+        entry.verifiedByRole ||
+        entry.verifiedRole ||
+        "N/A"
+    );
+}
+
+
+/* =====================================================
+   RENDER HISTORY
+===================================================== */
+
+function renderHistory() {
+
+    const search =
+        searchInput
+            .value
+            .trim()
+            .toLowerCase();
+
+
+    const filter =
+        statusFilter.value;
+
+
+    const filtered =
+        allEntries.filter(
+            entry => {
+
+                const name =
+                    getStudentName(
+                        entry
+                    ).toLowerCase();
+
+
+                const studentId =
+                    getStudentId(
+                        entry
+                    ).toLowerCase();
+
+
+                const verifiedBy =
+                    getVerifiedBy(
+                        entry
+                    ).toLowerCase();
+
+
+                const status =
+                    getStatus(
+                        entry
+                    );
+
+
+                const matchesSearch =
+                    !search ||
+                    name.includes(
+                        search
+                    ) ||
+                    studentId.includes(
+                        search
+                    ) ||
+                    verifiedBy.includes(
+                        search
+                    );
+
+
+                const matchesStatus =
+                    filter === "ALL" ||
+                    status === filter;
+
+
+                return (
+                    matchesSearch &&
+                    matchesStatus
+                );
+            }
+        );
+
+
+    tableBody.innerHTML = "";
+
+
+    if (
+        filtered.length === 0
+    ) {
+
+        tableContainer.style.display =
+            "none";
+
+        emptyState.style.display =
+            "block";
+
+        return;
+    }
+
+
+    emptyState.style.display =
+        "none";
+
+    tableContainer.style.display =
+        "block";
+
+
+    filtered.forEach(
+        (entry, index) => {
+
+            const studentName =
+                getStudentName(
+                    entry
+                );
+
+
+            const studentId =
+                getStudentId(
+                    entry
+                );
+
+
+            const studentType =
+                getStudentType(
+                    entry
+                );
+
+
+            const status =
+                getStatus(
+                    entry
+                );
+
+
+            const verifiedBy =
+                getVerifiedBy(
+                    entry
+                );
+
+
+            const verifiedRole =
+                getVerifiedRole(
+                    entry
+                );
+
+
+            const dateTime =
+                formatDateTime(
+                    entry.createdAt ||
+                    entry.timestamp ||
+                    entry.date ||
+                    entry.verifiedAt
+                );
+
+
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+
+            row.innerHTML = `
+
+                <td>
+                    ${index + 1}
+                </td>
+
+
+                <td>
+
+                    <div class="student-name">
+                        ${escapeHtml(
+                            studentName
+                        )}
+                    </div>
+
+                    <div class="student-id">
+                        ${escapeHtml(
+                            studentId
+                        )}
+                    </div>
+
+                </td>
+
+
+                <td>
+                    ${escapeHtml(
+                        studentType
+                    )}
+                </td>
+
+
+                <td>
+                    ${escapeHtml(
+                        dateTime
+                    )}
+                </td>
+
+
+                <td>
+
+                    ${
+                        status === "ALLOWED"
+
+                        ?
+
+                        `
+                        <span class="status-badge status-allowed">
+                            <i class="bi bi-check-circle me-1"></i>
+                            ALLOWED
+                        </span>
+                        `
+
+                        :
+
+                        `
+                        <span class="status-badge status-rejected">
+                            <i class="bi bi-x-circle me-1"></i>
+                            ${escapeHtml(
+                                status
+                            )}
+                        </span>
+                        `
+                    }
+
+                </td>
+
+
+                <td>
+                    ${escapeHtml(
+                        verifiedBy
+                    )}
+                </td>
+
+
+                <td>
+
+                    <span class="role-badge">
+                        ${escapeHtml(
+                            verifiedRole
+                        )}
+                    </span>
+
+                </td>
+
+            `;
+
+
+            tableBody.appendChild(
+                row
+            );
+        }
+    );
+}
+
+
+/* =====================================================
+   ESCAPE HTML
+===================================================== */
+
+function escapeHtml(value) {
+
+    return String(value)
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+}
+
+
+/* =====================================================
+   SEARCH
+===================================================== */
+
+searchInput.addEventListener(
+    "input",
+    renderHistory
+);
+
+
+/* =====================================================
+   FILTER
+===================================================== */
+
+statusFilter.addEventListener(
+    "change",
+    renderHistory
+);
+
+
+/* =====================================================
+   REFRESH
+===================================================== */
+
+document.getElementById(
+    "refreshBtn"
+).addEventListener(
+    "click",
+    async function() {
+
+        await loadHistory();
+    }
+);
+
+
+/* =====================================================
+   LOGOUT
+===================================================== */
+
+document.getElementById(
+    "logoutBtn"
+).addEventListener(
+    "click",
+    async function() {
+
+        try {
+
+            await firebase
+                .auth()
+                .signOut();
+
+        } catch (error) {
+
+            console.error(
+                "Logout error:",
+                error
+            );
+        }
+
+
+        sessionStorage.clear();
+
+
+        window.location.href =
+            "admin-login.html";
+    }
+);
+
+
+/* =====================================================
+   AUTH STATE
+===================================================== */
+
+firebase
+    .auth()
+    .onAuthStateChanged(
+        async function(user) {
+
+            console.log(
+                "Auth state:",
+                user
+                    ? user.email
+                    : "No user"
+            );
+
+
+            if (!user) {
+
+                window.location.href =
+                    "admin-login.html";
+
+                return;
+            }
+
+
+            currentUser =
+                user;
+
+
+            try {
+
+                /*
+                 * Force fresh token.
+                 */
+
+                await user.getIdToken(
+                    true
+                );
+
+
+                const authorized =
+                    await loadCurrentUser();
+
+
+                if (
+                    authorized
+                ) {
+
+                    await loadHistory();
+                }
+
+
+            } catch (error) {
+
+                console.error(
+                    "History initialization error:",
+                    error
+                );
+
+
+                showError(
+                    error.message ||
+                    "Unable to load history."
+                );
+            }
+
+        }
+    );
+
+
+/* =====================================================
+   AUTOMATIC TOKEN REFRESH
+===================================================== */
+
+setInterval(
+    async function() {
+
+        try {
+
+            const user =
+                firebase
+                    .auth()
+                    .currentUser;
+
+
+            if (user) {
+
+                await user.getIdToken(
+                    true
+                );
+
+                console.log(
+                    "Firebase token refreshed."
+                );
+            }
+
+        } catch (error) {
+
+            console.warn(
+                "Token refresh failed:",
+                error
+            );
+        }
+
+    },
+    45 * 60 * 1000
+);
+
+
+console.log(
+    "SRM AP Entry History loaded successfully."
+);
+
+</script>
+
+</body>
+</html>

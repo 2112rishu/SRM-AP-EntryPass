@@ -1,1902 +1,3885 @@
-// ============================================================
-// SRM AP DAYPASS / ENTRYPASS - SECURE BACKEND
-// ============================================================
+"use strict";
+
+/*
+============================================================
+ SRM AP DAYPASS - SECURE / CONCURRENT SERVER
+============================================================
+*/
 
 require("dotenv").config();
 
 const express = require("express");
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
-const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const {
-  initializeApp,
-  cert,
-  getApps
+    initializeApp,
+    getApps,
+    cert
 } = require("firebase-admin/app");
 
 const {
-  getAuth
+    getAuth
 } = require("firebase-admin/auth");
 
 const {
-  getFirestore,
-  FieldValue
+    getFirestore,
+    FieldValue
 } = require("firebase-admin/firestore");
 
-// ============================================================
-// APP CONFIG
-// ============================================================
+
+/*
+============================================================
+ CONFIGURATION
+============================================================
+*/
 
 const app = express();
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT =
+    Number(process.env.PORT || 3000);
 
-const QR_TTL = 30; // seconds
+const QR_SECRET =
+    process.env.DAYPASS_QR_SECRET;
+
+const QR_TTL = 30;
+
 const DAILY_LIMIT = 3;
 
-const QR_SECRET = process.env.DAYPASS_QR_SECRET;
+const MAX_BODY_SIZE = "20kb";
 
-if (!QR_SECRET || QR_SECRET.length < 48) {
-  console.error(
-    "❌ DAYPASS_QR_SECRET is missing or shorter than 48 characters."
-  );
-  process.exit(1);
+const PUBLIC_DIR =
+    path.join(__dirname, "public");
+
+
+/*
+============================================================
+ VALIDATE CONFIG
+============================================================
+*/
+
+if (
+    !QR_SECRET ||
+    QR_SECRET.length < 48
+) {
+    console.error(
+        "DAYPASS_QR_SECRET is missing or shorter than 48 characters."
+    );
+
+    process.exit(1);
 }
 
-// ============================================================
-// FIREBASE INITIALIZATION
-// ============================================================
 
-let serviceAccount;
+/*
+============================================================
+ FIREBASE INITIALIZATION
+============================================================
+*/
 
-try {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    serviceAccount = JSON.parse(
-      process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-    );
-  } else {
-    const serviceAccountPath = path.join(
-      __dirname,
-      "firebase-service-account.json"
-    );
+function initializeFirebase() {
 
-    if (!fs.existsSync(serviceAccountPath)) {
-      throw new Error(
-        "firebase-service-account.json not found."
-      );
+    if (getApps().length > 0) {
+        return;
     }
 
-    serviceAccount = require(serviceAccountPath);
-  }
-} catch (error) {
-  console.error("❌ Firebase service account error:");
-  console.error(error.message);
-  process.exit(1);
+    let serviceAccount;
+
+    /*
+    --------------------------------------------------------
+     Render / Production
+    --------------------------------------------------------
+    */
+
+    if (
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+    ) {
+
+        try {
+
+            serviceAccount =
+                JSON.parse(
+                    process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+                );
+
+        } catch (error) {
+
+            console.error(
+                "Invalid FIREBASE_SERVICE_ACCOUNT_JSON."
+            );
+
+            process.exit(1);
+        }
+
+    }
+
+    /*
+    --------------------------------------------------------
+     Local development
+    --------------------------------------------------------
+    */
+
+    else {
+
+        const serviceAccountFile =
+            path.join(
+                __dirname,
+                "firebase-service-account.json"
+            );
+
+        if (
+            !fs.existsSync(
+                serviceAccountFile
+            )
+        ) {
+
+            console.error(
+                "firebase-service-account.json not found."
+            );
+
+            process.exit(1);
+        }
+
+        try {
+
+            serviceAccount =
+                JSON.parse(
+                    fs.readFileSync(
+                        serviceAccountFile,
+                        "utf8"
+                    )
+                );
+
+        } catch (error) {
+
+            console.error(
+                "Unable to read Firebase service account."
+            );
+
+            process.exit(1);
+        }
+    }
+
+
+    initializeApp({
+        credential:
+            cert(serviceAccount)
+    });
 }
 
-if (!getApps().length) {
-  initializeApp({
-    credential: cert(serviceAccount)
-  });
-}
 
-const auth = getAuth();
-const db = getFirestore();
+initializeFirebase();
 
-console.log("✅ Firebase connected");
 
-// ============================================================
-// SECURITY MIDDLEWARE
-// ============================================================
+const db =
+    getFirestore();
+
+const auth =
+    getAuth();
+
+
+console.log(
+    "Firebase Admin initialized successfully."
+);
+
+
+/*
+============================================================
+ EXPRESS SECURITY
+============================================================
+*/
 
 app.disable("x-powered-by");
 
-app.use(
-  helmet({
-    contentSecurityPolicy: false
-  })
+
+app.set(
+    "trust proxy",
+    1
 );
 
-app.use(
-  express.json({
-    limit: "20kb"
-  })
-);
+
+/*
+------------------------------------------------------------
+ Helmet
+------------------------------------------------------------
+*/
 
 app.use(
-  express.urlencoded({
-    extended: false,
-    limit: "20kb"
-  })
+    helmet({
+        contentSecurityPolicy: false,
+        crossOriginEmbedderPolicy: false
+    })
 );
 
-// General rate limiter
+
+/*
+------------------------------------------------------------
+ Request size limits
+------------------------------------------------------------
+*/
+
 app.use(
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      success: false,
-      error: "Too many requests. Please try again later."
-    }
-  })
+    express.json({
+        limit: MAX_BODY_SIZE
+    })
 );
 
-// ============================================================
-// HELPERS
-// ============================================================
 
-function clean(value, maxLength = 200) {
-  if (value === undefined || value === null) {
-    return "";
-  }
+app.use(
+    express.urlencoded({
+        extended: false,
+        limit: MAX_BODY_SIZE
+    })
+);
 
-  return String(value)
-    .trim()
-    .slice(0, maxLength);
-}
 
-function normalizeEmail(email) {
-  return clean(email, 200).toLowerCase();
-}
+/*
+============================================================
+ RATE LIMITERS
+============================================================
+*/
 
-function dayKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);
-}
+const globalLimiter =
+    rateLimit({
 
-function safeDate(value) {
-  if (!value) return null;
+        windowMs:
+            15 * 60 * 1000,
 
-  if (typeof value.toDate === "function") {
-    return value.toDate();
-  }
+        max: 500,
 
-  if (value instanceof Date) {
-    return value;
-  }
+        standardHeaders: true,
 
-  return new Date(value);
-}
+        legacyHeaders: false,
 
-function generateNonce() {
-  return crypto.randomBytes(24).toString("hex");
-}
+        message: {
+            success: false,
+            error:
+                "Too many requests. Please try again later."
+        },
 
-function base64UrlEncode(value) {
-  return Buffer.from(value)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
+        skip: req =>
+            req.path === "/api/status"
+    });
 
-function base64UrlDecode(value) {
-  value = value.replace(/-/g, "+").replace(/_/g, "/");
 
-  while (value.length % 4) {
-    value += "=";
-  }
+const authLimiter =
+    rateLimit({
 
-  return Buffer.from(value, "base64").toString("utf8");
-}
+        windowMs:
+            15 * 60 * 1000,
 
-function signPayload(payload) {
-  return crypto
-    .createHmac("sha256", QR_SECRET)
-    .update(payload)
-    .digest("base64url");
-}
+        max: 100,
 
-function safeEqual(a, b) {
-  const aBuffer = Buffer.from(a);
-  const bBuffer = Buffer.from(b);
+        standardHeaders: true,
 
-  if (aBuffer.length !== bBuffer.length) {
-    return false;
-  }
+        legacyHeaders: false,
 
-  return crypto.timingSafeEqual(
-    aBuffer,
-    bBuffer
-  );
-}
+        message: {
+            success: false,
+            error:
+                "Too many authentication requests."
+        }
+    });
 
-// ============================================================
-// QR FUNCTIONS
-// ============================================================
 
-function createQRToken({
-  uid,
-  studentId
-}) {
-  const now = Math.floor(Date.now() / 1000);
+const qrLimiter =
+    rateLimit({
 
-  const payload = {
-    v: 1,
-    uid,
-    studentId,
-    iat: now,
-    exp: now + QR_TTL,
-    nonce: generateNonce()
-  };
+        windowMs:
+            60 * 1000,
 
-  const encodedPayload = base64UrlEncode(
-    JSON.stringify(payload)
-  );
+        max: 30,
 
-  const signature = signPayload(
-    encodedPayload
-  );
+        standardHeaders: true,
 
-  return `${encodedPayload}.${signature}`;
-}
+        legacyHeaders: false,
 
-function verifyQRToken(token) {
-  if (
-    typeof token !== "string" ||
-    token.length > 5000
-  ) {
-    throw new Error("Invalid QR token.");
-  }
+        message: {
+            success: false,
+            error:
+                "Too many QR requests. Please wait."
+        }
+    });
 
-  const parts = token.split(".");
 
-  if (parts.length !== 2) {
-    throw new Error("Invalid QR format.");
-  }
+const adminLimiter =
+    rateLimit({
 
-  const [
-    encodedPayload,
-    signature
-  ] = parts;
+        windowMs:
+            60 * 1000,
 
-  const expectedSignature =
-    signPayload(encodedPayload);
+        max: 60,
 
-  if (
-    !safeEqual(
-      signature,
-      expectedSignature
-    )
-  ) {
-    throw new Error("Invalid QR signature.");
-  }
+        standardHeaders: true,
 
-  let payload;
+        legacyHeaders: false,
 
-  try {
-    payload = JSON.parse(
-      base64UrlDecode(encodedPayload)
-    );
-  } catch {
-    throw new Error("Invalid QR payload.");
-  }
+        message: {
+            success: false,
+            error:
+                "Too many administrative requests."
+        }
+    });
 
-  if (
-    !payload ||
-    payload.v !== 1 ||
-    !payload.uid ||
-    !payload.studentId ||
-    !payload.iat ||
-    !payload.exp ||
-    !payload.nonce
-  ) {
-    throw new Error("Invalid QR data.");
-  }
 
-  const now = Math.floor(Date.now() / 1000);
+app.use(
+    globalLimiter
+);
 
-  if (payload.exp <= now) {
-    throw new Error("QR code expired.");
-  }
 
-  if (payload.iat > now + 5) {
-    throw new Error("QR issue time is invalid.");
-  }
+/*
+============================================================
+ HELPERS
+============================================================
+*/
 
-  if (
-    payload.exp - payload.iat >
-    QR_TTL + 5
-  ) {
-    throw new Error("QR lifetime is invalid.");
-  }
-
-  return payload;
-}
-
-// ============================================================
-// AUTHENTICATION MIDDLEWARE
-// ============================================================
-
-async function authenticate(req, res, next) {
-  try {
-    const header =
-      req.headers.authorization || "";
-
-    if (!header.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        error: "Authentication required."
-      });
-    }
-
-    const token = header.substring(7).trim();
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: "Invalid authentication token."
-      });
-    }
-
-    const decodedToken =
-      await auth.verifyIdToken(token, true);
-
-    const uid = decodedToken.uid;
-
-    const userRef =
-      db.collection("students").doc(uid);
-
-    const userSnap =
-      await userRef.get();
-
-    if (!userSnap.exists) {
-      return res.status(403).json({
-        success: false,
-        error: "User profile not found."
-      });
-    }
-
-    const profile = userSnap.data();
+function clean(
+    value,
+    length = 500
+) {
 
     if (
-      String(profile.accountStatus || "ACTIVE")
-        .toUpperCase() !== "ACTIVE"
+        value === undefined ||
+        value === null
     ) {
-      return res.status(403).json({
-        success: false,
-        error: "Account is not active."
-      });
+        return "";
     }
 
-    req.user = {
-      uid,
-      email: decodedToken.email || profile.email || "",
-      name: profile.name || "",
-      studentId: profile.studentId || "",
-      studentType: profile.studentType || "",
-      role: profile.role || "STUDENT",
-      accountStatus:
-        profile.accountStatus || "ACTIVE"
-    };
-
-    next();
-
-  } catch (error) {
-    console.error(
-      "Authentication error:",
-      error.message
-    );
-
-    return res.status(401).json({
-      success: false,
-      error: "Invalid or expired authentication."
-    });
-  }
+    return String(value)
+        .trim()
+        .slice(0, length);
 }
 
-// ============================================================
-// ROLE AUTHORIZATION
-// ============================================================
 
-function requireRoles(...roles) {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: "Authentication required."
-      });
-    }
+function getToday() {
 
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: "You are not authorized for this action."
-      });
-    }
-
-    next();
-  };
-}
-
-// ============================================================
-// AUDIT LOG
-// ============================================================
-
-async function createAuditLog({
-  action,
-  actor,
-  targetUid = "",
-  details = {}
-}) {
-  try {
-    await db.collection("auditLogs").add({
-      action,
-      actorUid: actor?.uid || "",
-      actorEmail: actor?.email || "",
-      actorRole: actor?.role || "",
-      targetUid,
-      details,
-      createdAt: FieldValue.serverTimestamp()
-    });
-  } catch (error) {
-    console.error(
-      "Audit log error:",
-      error.message
-    );
-  }
-}
-
-// ============================================================
-// AUTOMATIC ID GENERATION
-// ============================================================
-
-async function generateNextId(prefix) {
-  const counterRef =
-    db.collection("idCounters").doc(prefix);
-
-  return db.runTransaction(
-    async transaction => {
-      const counterSnap =
-        await transaction.get(counterRef);
-
-      let nextNumber = 1001;
-
-      if (counterSnap.exists) {
-        const data = counterSnap.data();
-
-        nextNumber =
-          Number(data.nextNumber) || 1001;
-      } else {
-        const existingSnap =
-          await db
-            .collection("students")
-            .where(
-              "studentId",
-              ">=",
-              `${prefix}-`
-            )
-            .where(
-              "studentId",
-              "<",
-              `${prefix}.\uf8ff`
-            )
-            .get();
-
-        let maxNumber = 1000;
-
-        existingSnap.forEach(doc => {
-          const id =
-            doc.data().studentId || "";
-
-          const match =
-            id.match(
-              new RegExp(
-                `^${prefix}-(\\d+)$`
-              )
-            );
-
-          if (match) {
-            maxNumber = Math.max(
-              maxNumber,
-              Number(match[1])
-            );
-          }
-        });
-
-        nextNumber = maxNumber + 1;
-      }
-
-      transaction.set(
-        counterRef,
+    return new Intl.DateTimeFormat(
+        "en-CA",
         {
-          nextNumber: nextNumber + 1,
-          updatedAt:
-            FieldValue.serverTimestamp()
-        },
-        {
-          merge: true
+            timeZone:
+                "Asia/Kolkata",
+
+            year: "numeric",
+
+            month: "2-digit",
+
+            day: "2-digit"
         }
-      );
-
-      return `${prefix}-${nextNumber}`;
-    }
-  );
-}
-
-// ============================================================
-// STATUS
-// ============================================================
-
-app.get("/api/status", (req, res) => {
-  res.json({
-    success: true,
-    status: "online"
-  });
-});
-
-// ============================================================
-// CURRENT USER
-// ============================================================
-
-app.get(
-  "/api/me",
-  authenticate,
-  (req, res) => {
-    res.json({
-      success: true,
-      user: req.user
-    });
-  }
-);
-
-// ============================================================
-// CREATE QR
-// ============================================================
-
-const qrLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    error: "Too many QR requests."
-  }
-});
-
-async function generateStudentQR(req, res) {
-  try {
-    const studentId =
-      req.user.studentId;
-
-    if (!studentId) {
-      return res.status(400).json({
-        success: false,
-        error: "Student ID not found."
-      });
-    }
-
-    const today = dayKey();
-
-    const entriesSnapshot =
-      await db
-        .collection("entries")
-        .where(
-          "studentId",
-          "==",
-          studentId
-        )
-        .where(
-          "dayKey",
-          "==",
-          today
-        )
-        .get();
-
-    const dailyCount =
-      entriesSnapshot.size;
-
-    if (dailyCount >= DAILY_LIMIT) {
-      return res.status(429).json({
-        success: false,
-        error:
-          "Daily entry limit reached."
-      });
-    }
-
-    const token =
-      createQRToken({
-        uid: req.user.uid,
-        studentId
-      });
-
-    const payload =
-      verifyQRToken(token);
-
-    await createAuditLog({
-      action: "QR_GENERATED",
-      actor: req.user,
-      targetUid: req.user.uid,
-      details: {
-        studentId
-      }
-    });
-
-    res.json({
-      success: true,
-
-      qrData: token,
-
-      token,
-
-      issuedAt:
-        new Date(
-          payload.iat * 1000
-        ).toISOString(),
-
-      expiresAt:
-        new Date(
-          payload.exp * 1000
-        ).toISOString(),
-
-      qr: {
-        token,
-        issuedAt:
-          new Date(
-            payload.iat * 1000
-          ).toISOString(),
-        expiresAt:
-          new Date(
-            payload.exp * 1000
-          ).toISOString()
-      },
-
-      dailyCount,
-      dailyLimit: DAILY_LIMIT
-    });
-
-  } catch (error) {
-    console.error(
-      "QR generation error:",
-      error
+    ).format(
+        new Date()
     );
-
-    res.status(500).json({
-      success: false,
-      error: "Unable to generate QR."
-    });
-  }
 }
 
-app.get(
-  "/api/qr",
-  authenticate,
-  requireRoles("STUDENT"),
-  qrLimiter,
-  generateStudentQR
-);
 
-app.post(
-  "/api/qr",
-  authenticate,
-  requireRoles("STUDENT"),
-  qrLimiter,
-  generateStudentQR
-);
+function sameConstantTime(
+    a,
+    b
+) {
 
-// ============================================================
-// VERIFY QR
-// ============================================================
-
-app.post(
-  "/api/verify-qr",
-  authenticate,
-  requireRoles(
-    "SECURITY",
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  qrLimiter,
-  async (req, res) => {
     try {
-      const token =
-        clean(
-          req.body.token ||
-          req.body.qrData,
-          5000
+
+        const x =
+            Buffer.from(
+                String(a)
+            );
+
+        const y =
+            Buffer.from(
+                String(b)
+            );
+
+        if (
+            x.length !== y.length
+        ) {
+            return false;
+        }
+
+        return crypto.timingSafeEqual(
+            x,
+            y
         );
 
-      if (!token) {
-        return res.status(400).json({
-          success: false,
-          error: "QR token is required."
-        });
-      }
+    } catch (_) {
 
-      const payload =
-        verifyQRToken(token);
+        return false;
+    }
+}
 
-      const studentRef =
-        db
-          .collection("students")
-          .doc(payload.uid);
 
-      const studentSnap =
-        await studentRef.get();
+function safeDate(
+    value
+) {
 
-      if (!studentSnap.exists) {
-        throw new Error(
-          "Student account not found."
+    try {
+
+        if (
+            value &&
+            typeof value.toDate ===
+                "function"
+        ) {
+            return value.toDate();
+        }
+
+        if (
+            value &&
+            typeof value.toMillis ===
+                "function"
+        ) {
+            return new Date(
+                value.toMillis()
+            );
+        }
+
+        if (
+            value instanceof Date
+        ) {
+            return value;
+        }
+
+        return null;
+
+    } catch (_) {
+
+        return null;
+    }
+}
+
+
+/*
+============================================================
+ AUDIT LOG
+============================================================
+*/
+
+async function audit(
+    actorUid,
+    actorRole,
+    action,
+    targetUid = null,
+    details = {}
+) {
+
+    try {
+
+        await db
+            .collection("auditLogs")
+            .add({
+
+                actorUid:
+                    clean(
+                        actorUid,
+                        200
+                    ),
+
+                actorRole:
+                    clean(
+                        actorRole,
+                        50
+                    ),
+
+                action:
+                    clean(
+                        action,
+                        100
+                    ),
+
+                targetUid:
+                    targetUid
+                        ? clean(
+                              targetUid,
+                              200
+                          )
+                        : null,
+
+                details,
+
+                createdAt:
+                    FieldValue.serverTimestamp()
+            });
+
+    } catch (error) {
+
+        /*
+        Audit failure must NEVER
+        bring down the main request.
+        */
+
+        console.error(
+            "Audit log error:",
+            error.message
         );
-      }
+    }
+}
 
-      const student =
-        studentSnap.data();
 
-      if (
-        String(
-          student.accountStatus || "ACTIVE"
-        ).toUpperCase() !== "ACTIVE"
-      ) {
-        throw new Error(
-          "Student account is inactive."
-        );
-      }
+/*
+============================================================
+ USER PROFILE CACHE
+============================================================
+*/
 
-      if (
-        student.studentId !==
-        payload.studentId
-      ) {
-        throw new Error(
-          "Student identity mismatch."
-        );
-      }
+const profileCache =
+    new Map();
 
-      const today = dayKey();
+const PROFILE_CACHE_TTL =
+    30 * 1000;
 
-      const result =
-        await db.runTransaction(
-          async transaction => {
 
-            const nonceRef =
-              db
-                .collection("usedQRNonces")
-                .doc(payload.nonce);
+function getCachedProfile(
+    uid
+) {
 
-            const nonceSnap =
-              await transaction.get(
-                nonceRef
-              );
+    const cached =
+        profileCache.get(uid);
 
-            if (nonceSnap.exists) {
-              throw new Error(
-                "QR code has already been used."
-              );
+    if (!cached) {
+        return null;
+    }
+
+    if (
+        Date.now() -
+            cached.time >
+        PROFILE_CACHE_TTL
+    ) {
+
+        profileCache.delete(uid);
+
+        return null;
+    }
+
+    return cached.profile;
+}
+
+
+function cacheProfile(
+    uid,
+    profile
+) {
+
+    profileCache.set(
+        uid,
+        {
+            profile,
+            time: Date.now()
+        }
+    );
+}
+
+
+/*
+============================================================
+ AUTHENTICATION
+============================================================
+*/
+
+async function authenticate(
+    req,
+    res,
+    next
+) {
+
+    try {
+
+        const header =
+            req.headers.authorization ||
+            "";
+
+        if (
+            !header.startsWith(
+                "Bearer "
+            )
+        ) {
+
+            return res
+                .status(401)
+                .json({
+                    success: false,
+                    error:
+                        "Authentication required."
+                });
+        }
+
+
+        const token =
+            header
+                .substring(7)
+                .trim();
+
+
+        if (
+            !token ||
+            token.length > 10000
+        ) {
+
+            return res
+                .status(401)
+                .json({
+                    success: false,
+                    error:
+                        "Invalid authentication token."
+                });
+        }
+
+
+        /*
+        ----------------------------------------------------
+         Verify Firebase token and check revocation
+        ----------------------------------------------------
+        */
+
+        const decoded =
+            await auth.verifyIdToken(
+                token,
+                true
+            );
+
+
+        const uid =
+            decoded.uid;
+
+
+        /*
+        ----------------------------------------------------
+         Get profile from cache first
+        ----------------------------------------------------
+        */
+
+        let profile =
+            getCachedProfile(
+                uid
+            );
+
+
+        if (!profile) {
+
+            const profileSnap =
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .doc(uid)
+                    .get();
+
+
+            if (
+                !profileSnap.exists
+            ) {
+
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        error:
+                            "User profile not found."
+                    });
             }
 
-            const entriesQuery =
-              await db
+
+            profile =
+                profileSnap.data();
+
+
+            cacheProfile(
+                uid,
+                profile
+            );
+        }
+
+
+        if (
+            (
+                profile.accountStatus ||
+                "ACTIVE"
+            ) !== "ACTIVE"
+        ) {
+
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    error:
+                        "This account is blocked."
+                });
+        }
+
+
+        const role =
+            profile.role ||
+            "STUDENT";
+
+
+        const validRoles = [
+            "STUDENT",
+            "SECURITY",
+            "ADMIN",
+            "SUPER_ADMIN"
+        ];
+
+
+        if (
+            !validRoles.includes(
+                role
+            )
+        ) {
+
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    error:
+                        "Invalid account role."
+                });
+        }
+
+
+        req.user = {
+
+            uid,
+
+            email:
+                decoded.email ||
+                profile.email ||
+                "",
+
+            name:
+                profile.name ||
+                decoded.name ||
+                decoded.email ||
+                "Unknown",
+
+            studentId:
+                profile.studentId ||
+                "",
+
+            studentType:
+                profile.studentType ||
+                "",
+
+            role,
+
+            accountStatus:
+                profile.accountStatus ||
+                "ACTIVE"
+        };
+
+
+        next();
+
+    } catch (error) {
+
+        console.error(
+            "Authentication error:",
+            error.code ||
+                error.message
+        );
+
+
+        if (
+            error.code ===
+            "auth/id-token-revoked"
+        ) {
+
+            return res
+                .status(401)
+                .json({
+                    success: false,
+                    error:
+                        "Session expired. Please login again."
+                });
+        }
+
+
+        return res
+            .status(401)
+            .json({
+                success: false,
+                error:
+                    "Authentication failed."
+            });
+    }
+}
+
+
+/*
+============================================================
+ ROLE PROTECTION
+============================================================
+*/
+
+function requireRoles(
+    ...roles
+) {
+
+    return (
+        req,
+        res,
+        next
+    ) => {
+
+        if (
+            !req.user ||
+            !roles.includes(
+                req.user.role
+            )
+        ) {
+
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    error:
+                        "You are not authorized."
+                });
+        }
+
+        next();
+    };
+}
+
+
+/*
+============================================================
+ QR CREATION
+============================================================
+*/
+
+function createSignature(
+    data
+) {
+
+    return crypto
+        .createHmac(
+            "sha256",
+            QR_SECRET
+        )
+        .update(data)
+        .digest("base64url");
+}
+
+
+function createQR(
+    user
+) {
+
+    const now =
+        Math.floor(
+            Date.now() / 1000
+        );
+
+
+    const payload = {
+
+        v: 1,
+
+        uid:
+            user.uid,
+
+        studentId:
+            user.studentId,
+
+        iat:
+            now,
+
+        exp:
+            now + QR_TTL,
+
+        nonce:
+            crypto
+                .randomBytes(32)
+                .toString("hex")
+    };
+
+
+    const encoded =
+        Buffer
+            .from(
+                JSON.stringify(
+                    payload
+                )
+            )
+            .toString(
+                "base64url"
+            );
+
+
+    const signature =
+        createSignature(
+            encoded
+        );
+
+
+    return {
+
+        token:
+            `${encoded}.${signature}`,
+
+        issuedAt:
+            now,
+
+        expiresAt:
+            now + QR_TTL
+    };
+}
+
+
+function verifyQR(
+    token
+) {
+
+    if (!token) {
+        throw new Error(
+            "QR code is required."
+        );
+    }
+
+
+    if (
+        token.length > 10000
+    ) {
+        throw new Error(
+            "QR code is too large."
+        );
+    }
+
+
+    const parts =
+        token.split(".");
+
+
+    if (
+        parts.length !== 2
+    ) {
+
+        throw new Error(
+            "Invalid QR code."
+        );
+    }
+
+
+    const encoded =
+        parts[0];
+
+    const signature =
+        parts[1];
+
+
+    const expected =
+        createSignature(
+            encoded
+        );
+
+
+    if (
+        !sameConstantTime(
+            signature,
+            expected
+        )
+    ) {
+
+        throw new Error(
+            "Invalid QR signature."
+        );
+    }
+
+
+    let payload;
+
+
+    try {
+
+        payload =
+            JSON.parse(
+                Buffer
+                    .from(
+                        encoded,
+                        "base64url"
+                    )
+                    .toString(
+                        "utf8"
+                    )
+            );
+
+    } catch (_) {
+
+        throw new Error(
+            "Invalid QR data."
+        );
+    }
+
+
+    const now =
+        Math.floor(
+            Date.now() / 1000
+        );
+
+
+    if (
+        payload.v !== 1
+    ) {
+
+        throw new Error(
+            "Unsupported QR version."
+        );
+    }
+
+
+    if (
+        !payload.uid ||
+        !payload.studentId ||
+        !payload.nonce
+    ) {
+
+        throw new Error(
+            "Incomplete QR code."
+        );
+    }
+
+
+    if (
+        typeof payload.uid !==
+            "string" ||
+        typeof payload.studentId !==
+            "string" ||
+        typeof payload.nonce !==
+            "string"
+    ) {
+
+        throw new Error(
+            "Invalid QR fields."
+        );
+    }
+
+
+    if (
+        payload.exp <= now
+    ) {
+
+        throw new Error(
+            "QR code has expired."
+        );
+    }
+
+
+    if (
+        payload.iat > now + 5
+    ) {
+
+        throw new Error(
+            "Invalid QR issue time."
+        );
+    }
+
+
+    if (
+        payload.exp -
+            payload.iat >
+        QR_TTL + 5
+    ) {
+
+        throw new Error(
+            "Invalid QR lifetime."
+        );
+    }
+
+
+    return payload;
+}
+
+
+/*
+============================================================
+ STATUS
+============================================================
+*/
+
+app.get(
+    "/api/status",
+    (req, res) => {
+
+        res.json({
+
+            success: true,
+
+            status: "online",
+
+            environment:
+                process.env.NODE_ENV ||
+                "development",
+
+            time:
+                new Date().toISOString()
+        });
+    }
+);
+
+
+/*
+============================================================
+ CURRENT USER
+============================================================
+*/
+
+app.get(
+    "/api/me",
+    authenticate,
+    async (
+        req,
+        res
+    ) => {
+
+        res.json({
+
+            success: true,
+
+            user:
+                req.user,
+
+            role:
+                req.user.role
+        });
+    }
+);
+
+
+/*
+============================================================
+ GENERATE STUDENT QR
+============================================================
+*/
+
+async function generateQR(
+    req,
+    res
+) {
+
+    try {
+
+        if (
+            req.user.role !==
+            "STUDENT"
+        ) {
+
+            return res
+                .status(403)
+                .json({
+                    success: false,
+                    error:
+                        "Only students can generate QR codes."
+                });
+        }
+
+
+        const snapshot =
+            await db
                 .collection("entries")
                 .where(
-                  "studentId",
-                  "==",
-                  payload.studentId
-                )
-                .where(
-                  "dayKey",
-                  "==",
-                  today
+                    "studentUid",
+                    "==",
+                    req.user.uid
                 )
                 .get();
 
-            if (
-              entriesQuery.size >=
-              DAILY_LIMIT
-            ) {
-              throw new Error(
-                "Daily entry limit reached."
-              );
+
+        const today =
+            getToday();
+
+
+        let todayCount = 0;
+
+
+        snapshot.forEach(
+            doc => {
+
+                const data =
+                    doc.data();
+
+
+                if (
+                    data.dayKey ===
+                    today
+                ) {
+
+                    todayCount++;
+                }
             }
-
-            const entryRef =
-              db.collection("entries").doc();
-
-            transaction.set(
-              nonceRef,
-              {
-                uid: payload.uid,
-                studentId:
-                  payload.studentId,
-                usedAt:
-                  FieldValue.serverTimestamp(),
-                verifiedBy:
-                  req.user.uid
-              }
-            );
-
-            transaction.set(
-              entryRef,
-              {
-                studentUid:
-                  payload.uid,
-
-                studentId:
-                  payload.studentId,
-
-                studentName:
-                  student.name || "",
-
-                studentEmail:
-                  student.email || "",
-
-                studentType:
-                  student.studentType || "",
-
-                verifierUid:
-                  req.user.uid,
-
-                verifierName:
-                  req.user.name || "",
-
-                verifierRole:
-                  req.user.role,
-
-                dayKey: today,
-
-                status: "ALLOWED",
-
-                qrNonce:
-                  payload.nonce,
-
-                createdAt:
-                  FieldValue.serverTimestamp()
-              }
-            );
-
-            return entryRef.id;
-          }
         );
 
-      await createAuditLog({
-        action: "ENTRY_ALLOWED",
-        actor: req.user,
-        targetUid: payload.uid,
-        details: {
-          studentId:
-            payload.studentId,
-          entryId: result
+
+        if (
+            todayCount >=
+            DAILY_LIMIT
+        ) {
+
+            return res
+                .status(429)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Daily entry limit reached.",
+
+                    dailyCount:
+                        todayCount,
+
+                    dailyLimit:
+                        DAILY_LIMIT
+                });
         }
-      });
 
-      res.json({
-        success: true,
-        status: "ALLOWED",
-        message:
-          "Entry verified successfully.",
-        student: {
-          uid: payload.uid,
-          studentId:
-            payload.studentId,
-          name:
-            student.name || "",
-          email:
-            student.email || "",
-          studentType:
-            student.studentType || ""
-        },
-        entryId: result
-      });
 
-    } catch (error) {
-      console.error(
-        "QR verification error:",
-        error.message
-      );
+        const qr =
+            createQR(
+                req.user
+            );
 
-      res.status(400).json({
-        success: false,
-        status: "REJECTED",
-        error:
-          error.message ||
-          "QR verification failed."
-      });
-    }
-  }
-);
 
-// ============================================================
-// STUDENT ENTRY HISTORY
-// ============================================================
+        /*
+        Audit is intentionally not
+        allowed to block QR creation.
+        */
 
-app.get(
-  "/api/entries/:studentId",
-  authenticate,
-  async (req, res) => {
-    try {
-      const requestedId =
-        clean(
-          req.params.studentId,
-          100
+        audit(
+            req.user.uid,
+            req.user.role,
+            "QR_GENERATED",
+            req.user.uid
         );
 
-      const isStaff =
-        [
-          "SECURITY",
-          "ADMIN",
-          "SUPER_ADMIN"
-        ].includes(
-          req.user.role
-        );
 
-      if (
-        !isStaff &&
-        requestedId !==
-        req.user.studentId
-      ) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "You can only view your own history."
+        return res.json({
+
+            success: true,
+
+            qrData:
+                qr.token,
+
+            token:
+                qr.token,
+
+            issuedAt:
+                qr.issuedAt,
+
+            expiresAt:
+                qr.expiresAt,
+
+            qr: {
+
+                token:
+                    qr.token,
+
+                issuedAt:
+                    new Date(
+                        qr.issuedAt *
+                        1000
+                    ).toISOString(),
+
+                expiresAt:
+                    new Date(
+                        qr.expiresAt *
+                        1000
+                    ).toISOString()
+            },
+
+            dailyCount:
+                todayCount,
+
+            dailyLimit:
+                DAILY_LIMIT
         });
-      }
-
-      const snapshot =
-        await db
-          .collection("entries")
-          .where(
-            "studentId",
-            "==",
-            requestedId
-          )
-          .get();
-
-      const entries =
-        snapshot.docs
-          .map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }))
-          .sort(
-            (a, b) => {
-              const aTime =
-                safeDate(a.createdAt)?.getTime() ||
-                0;
-
-              const bTime =
-                safeDate(b.createdAt)?.getTime() ||
-                0;
-
-              return bTime - aTime;
-            }
-          )
-          .slice(0, 200);
-
-      res.json({
-        success: true,
-        entries
-      });
 
     } catch (error) {
-      console.error(
-        "History error:",
-        error.message
-      );
 
-      res.status(500).json({
-        success: false,
-        error:
-          "Unable to load entry history."
-      });
+        console.error(
+            "QR generation error:",
+            error.message
+        );
+
+        return res
+            .status(500)
+            .json({
+                success: false,
+                error:
+                    "Unable to generate QR code."
+            });
     }
-  }
-);
+}
 
-// ============================================================
-// ADMIN - ALL ENTRIES
-// ============================================================
 
 app.get(
-  "/api/admin/entries",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
-    try {
-      const snapshot =
-        await db
-          .collection("entries")
-          .orderBy(
-            "createdAt",
-            "desc"
-          )
-          .limit(500)
-          .get();
-
-      const entries =
-        snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-      res.json({
-        success: true,
-        entries
-      });
-
-    } catch (error) {
-      console.error(
-        "Admin entries error:",
-        error.message
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Unable to load entries."
-      });
-    }
-  }
+    "/api/qr",
+    qrLimiter,
+    authenticate,
+    generateQR
 );
 
-// ============================================================
-// SUPER ADMIN - CREATE USER
-// ============================================================
 
 app.post(
-  "/api/super-admin/create-user",
-  authenticate,
-  requireRoles("SUPER_ADMIN"),
-  async (req, res) => {
+    "/api/qr",
+    qrLimiter,
+    authenticate,
+    generateQR
+);
 
-    let createdAuthUser = null;
 
-    try {
-      const name =
-        clean(req.body.name, 100);
+/*
+============================================================
+ VERIFY QR
+============================================================
+*/
 
-      const email =
-        normalizeEmail(
-          req.body.email
+app.post(
+    "/api/verify-qr",
+    qrLimiter,
+    authenticate,
+    requireRoles(
+        "SECURITY",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const token =
+                clean(
+                    req.body.qrData ||
+                    req.body.token ||
+                    req.body.qr,
+                    10000
+                );
+
+
+            const payload =
+                verifyQR(
+                    token
+                );
+
+
+            const studentSnap =
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .doc(
+                        payload.uid
+                    )
+                    .get();
+
+
+            if (
+                !studentSnap.exists
+            ) {
+
+                throw new Error(
+                    "Student account not found."
+                );
+            }
+
+
+            const student =
+                studentSnap.data();
+
+
+            if (
+                (
+                    student.accountStatus ||
+                    "ACTIVE"
+                ) !== "ACTIVE"
+            ) {
+
+                throw new Error(
+                    "Student account is blocked."
+                );
+            }
+
+
+            if (
+                clean(
+                    student.studentId
+                ) !==
+                clean(
+                    payload.studentId
+                )
+            ) {
+
+                throw new Error(
+                    "Student ID verification failed."
+                );
+            }
+
+
+            const today =
+                getToday();
+
+
+            /*
+            ------------------------------------------------
+             IMPORTANT:
+             The daily counter is stored in Firestore and
+             updated inside the SAME transaction as the
+             QR nonce and entry.
+
+             This prevents multiple simultaneous scanners
+             from bypassing the 3-entry limit.
+            ------------------------------------------------
+            */
+
+            const counterId =
+                `${payload.uid}_${today}`;
+
+            const counterRef =
+                db
+                    .collection(
+                        "dailyEntryCounters"
+                    )
+                    .doc(
+                        counterId
+                    );
+
+
+            const nonceRef =
+                db
+                    .collection(
+                        "usedQRNonces"
+                    )
+                    .doc(
+                        payload.nonce
+                    );
+
+
+            const entryRef =
+                db
+                    .collection(
+                        "entries"
+                    )
+                    .doc();
+
+
+            const result =
+                await db.runTransaction(
+                    async transaction => {
+
+                        /*
+                        ------------------------------------
+                         READS
+                        ------------------------------------
+                        */
+
+                        const nonceSnap =
+                            await transaction.get(
+                                nonceRef
+                            );
+
+
+                        if (
+                            nonceSnap.exists
+                        ) {
+
+                            throw new Error(
+                                "This QR code has already been used."
+                            );
+                        }
+
+
+                        const counterSnap =
+                            await transaction.get(
+                                counterRef
+                            );
+
+
+                        let todayCount = 0;
+
+
+                        if (
+                            counterSnap.exists
+                        ) {
+
+                            todayCount =
+                                Number(
+                                    counterSnap
+                                        .data()
+                                        .count ||
+                                    0
+                                );
+                        }
+
+
+                        /*
+                        ------------------------------------
+                         ATOMIC DAILY LIMIT
+                        ------------------------------------
+                        */
+
+                        if (
+                            todayCount >=
+                            DAILY_LIMIT
+                        ) {
+
+                            throw new Error(
+                                "Student has reached the daily entry limit."
+                            );
+                        }
+
+
+                        const newCount =
+                            todayCount + 1;
+
+
+                        /*
+                        ------------------------------------
+                         CREATE ENTRY
+                        ------------------------------------
+                        */
+
+                        transaction.create(
+                            entryRef,
+                            {
+
+                                studentUid:
+                                    payload.uid,
+
+                                studentId:
+                                    student.studentId ||
+                                    "",
+
+                                studentName:
+                                    student.name ||
+                                    "",
+
+                                studentEmail:
+                                    student.email ||
+                                    "",
+
+                                studentType:
+                                    student.studentType ||
+                                    "",
+
+
+                                /*
+                                Human-readable verifier
+                                */
+
+                                verifiedBy:
+                                    req.user.name ||
+                                    req.user.email ||
+                                    "Unknown",
+
+
+                                verifiedByUid:
+                                    req.user.uid,
+
+
+                                verifiedByRole:
+                                    req.user.role,
+
+
+                                verifierUid:
+                                    req.user.uid,
+
+
+                                verifierName:
+                                    req.user.name ||
+                                    req.user.email ||
+                                    "Unknown",
+
+
+                                verifierRole:
+                                    req.user.role,
+
+
+                                dayKey:
+                                    today,
+
+
+                                status:
+                                    "ALLOWED",
+
+
+                                qrNonce:
+                                    payload.nonce,
+
+
+                                createdAt:
+                                    FieldValue.serverTimestamp()
+                            }
+                        );
+
+
+                        /*
+                        ------------------------------------
+                         MARK QR AS USED
+                        ------------------------------------
+                        */
+
+                        transaction.create(
+                            nonceRef,
+                            {
+
+                                uid:
+                                    payload.uid,
+
+                                studentId:
+                                    payload.studentId,
+
+                                usedBy:
+                                    req.user.uid,
+
+                                usedByName:
+                                    req.user.name ||
+                                    req.user.email ||
+                                    "Unknown",
+
+                                usedByRole:
+                                    req.user.role,
+
+                                usedAt:
+                                    FieldValue.serverTimestamp(),
+
+                                expiresAt:
+                                    payload.exp
+                            }
+                        );
+
+
+                        /*
+                        ------------------------------------
+                         UPDATE ATOMIC COUNTER
+                        ------------------------------------
+                        */
+
+                        transaction.set(
+                            counterRef,
+                            {
+
+                                studentUid:
+                                    payload.uid,
+
+                                dayKey:
+                                    today,
+
+                                count:
+                                    newCount,
+
+                                updatedAt:
+                                    FieldValue.serverTimestamp()
+
+                            },
+                            {
+                                merge: true
+                            }
+                        );
+
+
+                        return {
+
+                            entryId:
+                                entryRef.id,
+
+                            dailyCount:
+                                newCount,
+
+                            dailyLimit:
+                                DAILY_LIMIT,
+
+                            remainingEntries:
+                                DAILY_LIMIT -
+                                newCount
+                        };
+                    }
+                );
+
+
+            /*
+            ------------------------------------------------
+             AUDIT DOES NOT BLOCK RESPONSE
+            ------------------------------------------------
+            */
+
+            audit(
+                req.user.uid,
+                req.user.role,
+                "ENTRY_ALLOWED",
+                payload.uid,
+                {
+                    studentId:
+                        student.studentId ||
+                        "",
+
+                    entryId:
+                        result.entryId
+                }
+            );
+
+
+            return res.json({
+
+                success: true,
+
+                status:
+                    "ALLOWED",
+
+                message:
+                    "Entry verified successfully.",
+
+                student: {
+
+                    uid:
+                        payload.uid,
+
+                    studentId:
+                        student.studentId ||
+                        "",
+
+                    name:
+                        student.name ||
+                        "",
+
+                    studentType:
+                        student.studentType ||
+                        "",
+
+                    accountStatus:
+                        student.accountStatus ||
+                        "ACTIVE"
+                },
+
+                entry: {
+
+                    entryId:
+                        result.entryId,
+
+                    dailyCount:
+                        result.dailyCount,
+
+                    dailyLimit:
+                        result.dailyLimit,
+
+                    remainingEntries:
+                        result.remainingEntries
+                }
+            });
+
+        } catch (error) {
+
+            console.error(
+                "QR verification error:",
+                error.message
+            );
+
+
+            return res
+                .status(400)
+                .json({
+
+                    success: false,
+
+                    status:
+                        "REJECTED",
+
+                    error:
+                        error.message ||
+                        "QR verification failed."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ RESOLVE OLD VERIFIER UID -> NAME
+============================================================
+*/
+
+async function resolveVerifierNames(
+    entries
+) {
+
+    const uidSet =
+        new Set();
+
+
+    for (
+        const entry of entries
+    ) {
+
+        const uid =
+            entry.verifierUid ||
+            entry.verifiedByUid ||
+            entry.verifiedBy;
+
+
+        /*
+        Firebase UIDs are generally
+        longer than normal names.
+        */
+
+        if (
+            uid &&
+            typeof uid ===
+                "string" &&
+            uid.length > 20
+        ) {
+
+            uidSet.add(
+                uid
+            );
+        }
+    }
+
+
+    if (
+        uidSet.size === 0
+    ) {
+
+        return entries;
+    }
+
+
+    const uidList =
+        Array.from(
+            uidSet
         );
 
-      const password =
-        String(
-          req.body.password || ""
+
+    const refs =
+        uidList.map(
+            uid =>
+                db
+                    .collection(
+                        "students"
+                    )
+                    .doc(uid)
         );
 
-      const role =
-        clean(
-          req.body.role,
-          50
-        ).toUpperCase();
 
-      const studentType =
-        clean(
-          req.body.studentType,
-          50
+    const snapshots =
+        await db.getAll(
+            ...refs
         );
 
-      const allowedRoles = [
-        "STUDENT",
+
+    const nameMap =
+        new Map();
+
+
+    snapshots.forEach(
+        (
+            snap,
+            index
+        ) => {
+
+            if (
+                snap.exists
+            ) {
+
+                const data =
+                    snap.data();
+
+
+                nameMap.set(
+                    uidList[index],
+                    data.name ||
+                    data.displayName ||
+                    data.email ||
+                    "Unknown"
+                );
+            }
+        }
+    );
+
+
+    return entries.map(
+        entry => {
+
+            const uid =
+                entry.verifierUid ||
+                entry.verifiedByUid ||
+                entry.verifiedBy;
+
+
+            const name =
+                entry.verifierName ||
+                nameMap.get(
+                    uid
+                ) ||
+                (
+                    uid &&
+                    uid.length <= 20
+                        ? uid
+                        : "Unknown"
+                );
+
+
+            return {
+
+                ...entry,
+
+                verifiedBy:
+                    name,
+
+                verifiedByUid:
+                    uid || "",
+
+                verifierName:
+                    name
+            };
+        }
+    );
+}
+
+
+/*
+============================================================
+ STUDENT HISTORY
+============================================================
+*/
+
+app.get(
+    "/api/entries/:studentId",
+    authenticate,
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const studentId =
+                clean(
+                    req.params.studentId,
+                    100
+                );
+
+
+            if (
+                req.user.role ===
+                    "STUDENT" &&
+                studentId !==
+                    req.user.studentId
+            ) {
+
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        error:
+                            "You can only view your own history."
+                    });
+            }
+
+
+            const snapshot =
+                await db
+                    .collection(
+                        "entries"
+                    )
+                    .where(
+                        "studentId",
+                        "==",
+                        studentId
+                    )
+                    .limit(200)
+                    .get();
+
+
+            let entries =
+                snapshot.docs
+                    .map(
+                        doc => ({
+                            id:
+                                doc.id,
+
+                            ...doc.data()
+                        })
+                    )
+                    .sort(
+                        (
+                            a,
+                            b
+                        ) => {
+
+                            const aTime =
+                                safeDate(
+                                    a.createdAt
+                                )?.getTime() ||
+                                0;
+
+                            const bTime =
+                                safeDate(
+                                    b.createdAt
+                                )?.getTime() ||
+                                0;
+
+                            return (
+                                bTime -
+                                aTime
+                            );
+                        }
+                    )
+                    .slice(
+                        0,
+                        100
+                    );
+
+
+            entries =
+                await resolveVerifierNames(
+                    entries
+                );
+
+
+            return res.json({
+
+                success: true,
+
+                entries
+            });
+
+        } catch (error) {
+
+            console.error(
+                "History error:",
+                error.message
+            );
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to load entry history."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ STAFF / ADMIN HISTORY
+============================================================
+*/
+
+app.get(
+    "/api/admin/entries",
+    authenticate,
+    requireRoles(
         "SECURITY",
         "ADMIN",
         "SUPER_ADMIN"
-      ];
+    ),
+    async (
+        req,
+        res
+    ) => {
 
-      if (!name) {
-        return res.status(400).json({
-          success: false,
-          error: "Name is required."
-        });
-      }
-
-      if (
-        !email ||
-        !email.includes("@")
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: "Valid email is required."
-        });
-      }
-
-      if (password.length < 8) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Password must contain at least 8 characters."
-        });
-      }
-
-      if (!allowedRoles.includes(role)) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid role."
-        });
-      }
-
-      let prefix;
-
-      if (role === "STUDENT") {
-        prefix = "SRMAP-STU";
-      } else if (role === "SECURITY") {
-        prefix = "SRMAP-SEC";
-      } else if (role === "ADMIN") {
-        prefix = "SRMAP-ADM";
-      } else {
-        prefix = "SRMAP-SADM";
-      }
-
-      const generatedId =
-        await generateNextId(prefix);
-
-      createdAuthUser =
-        await auth.createUser({
-          email,
-          password,
-          displayName: name,
-          disabled: false
-        });
-
-      await db
-        .collection("students")
-        .doc(createdAuthUser.uid)
-        .set({
-          uid:
-            createdAuthUser.uid,
-
-          name,
-
-          email,
-
-          studentId:
-            generatedId,
-
-          studentType:
-            role === "STUDENT"
-              ? studentType
-              : "",
-
-          role,
-
-          accountStatus:
-            "ACTIVE",
-
-          createdAt:
-            FieldValue.serverTimestamp(),
-
-          createdBy:
-            req.user.uid
-        });
-
-      await createAuditLog({
-        action: "USER_CREATED",
-        actor: req.user,
-        targetUid:
-          createdAuthUser.uid,
-        details: {
-          name,
-          email,
-          studentId:
-            generatedId,
-          role
-        }
-      });
-
-      res.status(201).json({
-        success: true,
-        message:
-          "User created successfully.",
-        user: {
-          uid:
-            createdAuthUser.uid,
-          name,
-          email,
-          studentId:
-            generatedId,
-          role,
-          accountStatus:
-            "ACTIVE"
-        }
-      });
-
-    } catch (error) {
-
-      if (createdAuthUser) {
         try {
-          await auth.deleteUser(
-            createdAuthUser.uid
-          );
-        } catch (rollbackError) {
-          console.error(
-            "Auth rollback failed:",
-            rollbackError.message
-          );
+
+            const snapshot =
+                await db
+                    .collection(
+                        "entries"
+                    )
+                    .limit(200)
+                    .get();
+
+
+            let entries =
+                snapshot.docs
+                    .map(
+                        doc => ({
+                            id:
+                                doc.id,
+
+                            ...doc.data()
+                        })
+                    )
+                    .sort(
+                        (
+                            a,
+                            b
+                        ) => {
+
+                            const aTime =
+                                safeDate(
+                                    a.createdAt
+                                )?.getTime() ||
+                                0;
+
+                            const bTime =
+                                safeDate(
+                                    b.createdAt
+                                )?.getTime() ||
+                                0;
+
+                            return (
+                                bTime -
+                                aTime
+                            );
+                        }
+                    );
+
+
+            entries =
+                await resolveVerifierNames(
+                    entries
+                );
+
+
+            return res.json({
+
+                success: true,
+
+                entries
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Staff history error:",
+                error.message
+            );
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to load entry history."
+                });
         }
-      }
-
-      console.error(
-        "Create user error:",
-        error.message
-      );
-
-      res.status(400).json({
-        success: false,
-        error:
-          error.message ||
-          "Unable to create user."
-      });
     }
-  }
 );
 
-// ============================================================
-// CREATE STUDENT
-// ============================================================
 
-app.post(
-  "/api/students",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
+/*
+============================================================
+ AUTOMATIC ID GENERATOR
+============================================================
+*/
 
-    let createdAuthUser = null;
+async function generateNextId(
+    prefix
+) {
 
-    try {
-      const name =
-        clean(req.body.name, 100);
-
-      const email =
-        normalizeEmail(
-          req.body.email
-        );
-
-      const password =
-        String(
-          req.body.password || ""
-        );
-
-      const studentType =
-        clean(
-          req.body.studentType,
-          50
-        );
-
-      if (!name || !email) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Name and email are required."
-        });
-      }
-
-      if (password.length < 8) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Password must contain at least 8 characters."
-        });
-      }
-
-      const studentId =
-        await generateNextId(
-          "SRMAP-STU"
-        );
-
-      createdAuthUser =
-        await auth.createUser({
-          email,
-          password,
-          displayName: name
-        });
-
-      await db
-        .collection("students")
-        .doc(createdAuthUser.uid)
-        .set({
-          uid:
-            createdAuthUser.uid,
-          name,
-          email,
-          studentId,
-          studentType,
-          role: "STUDENT",
-          accountStatus:
-            "ACTIVE",
-          createdAt:
-            FieldValue.serverTimestamp(),
-          createdBy:
-            req.user.uid
-        });
-
-      await createAuditLog({
-        action: "STUDENT_CREATED",
-        actor: req.user,
-        targetUid:
-          createdAuthUser.uid,
-        details: {
-          studentId
-        }
-      });
-
-      res.status(201).json({
-        success: true,
-        user: {
-          uid:
-            createdAuthUser.uid,
-          name,
-          email,
-          studentId,
-          role: "STUDENT",
-          accountStatus:
-            "ACTIVE"
-        }
-      });
-
-    } catch (error) {
-
-      if (createdAuthUser) {
-        try {
-          await auth.deleteUser(
-            createdAuthUser.uid
-          );
-        } catch {}
-      }
-
-      res.status(400).json({
-        success: false,
-        error:
-          error.message ||
-          "Unable to create student."
-      });
-    }
-  }
-);
-
-// ============================================================
-// CREATE ADMIN / SECURITY
-// ============================================================
-
-app.post(
-  "/api/admins",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
-
-    let createdAuthUser = null;
-
-    try {
-      const name =
-        clean(req.body.name, 100);
-
-      const email =
-        normalizeEmail(
-          req.body.email
-        );
-
-      const password =
-        String(
-          req.body.password || ""
-        );
-
-      const role =
-        clean(
-          req.body.role,
-          50
-        ).toUpperCase();
-
-      if (
-        ![
-          "SECURITY",
-          "ADMIN"
-        ].includes(role)
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Only SECURITY or ADMIN can be created here."
-        });
-      }
-
-      if (!name || !email) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Name and email are required."
-        });
-      }
-
-      if (password.length < 8) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Password must contain at least 8 characters."
-        });
-      }
-
-      const prefix =
-        role === "SECURITY"
-          ? "SRMAP-SEC"
-          : "SRMAP-ADM";
-
-      const generatedId =
-        await generateNextId(prefix);
-
-      createdAuthUser =
-        await auth.createUser({
-          email,
-          password,
-          displayName: name
-        });
-
-      await db
-        .collection("students")
-        .doc(createdAuthUser.uid)
-        .set({
-          uid:
-            createdAuthUser.uid,
-          name,
-          email,
-          studentId:
-            generatedId,
-          studentType: "",
-          role,
-          accountStatus:
-            "ACTIVE",
-          createdAt:
-            FieldValue.serverTimestamp(),
-          createdBy:
-            req.user.uid
-        });
-
-      await createAuditLog({
-        action: "STAFF_CREATED",
-        actor: req.user,
-        targetUid:
-          createdAuthUser.uid,
-        details: {
-          studentId:
-            generatedId,
-          role
-        }
-      });
-
-      res.status(201).json({
-        success: true,
-        user: {
-          uid:
-            createdAuthUser.uid,
-          name,
-          email,
-          studentId:
-            generatedId,
-          role,
-          accountStatus:
-            "ACTIVE"
-        }
-      });
-
-    } catch (error) {
-
-      if (createdAuthUser) {
-        try {
-          await auth.deleteUser(
-            createdAuthUser.uid
-          );
-        } catch {}
-      }
-
-      res.status(400).json({
-        success: false,
-        error:
-          error.message ||
-          "Unable to create staff."
-      });
-    }
-  }
-);
-
-// ============================================================
-// ADMIN - ALL USERS
-// ============================================================
-
-app.get(
-  "/api/admin/users",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
-    try {
-      const snapshot =
-        await db
-          .collection("students")
-          .get();
-
-      const users =
-        snapshot.docs.map(doc => ({
-          uid: doc.id,
-          ...doc.data()
-        }));
-
-      res.json({
-        success: true,
-        users
-      });
-
-    } catch (error) {
-      console.error(
-        "Users error:",
-        error.message
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Unable to load users."
-      });
-    }
-  }
-);
-
-// ============================================================
-// ADMIN - STAFF
-// ============================================================
-
-app.get(
-  "/api/admin/staff",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
-    try {
-      const snapshot =
-        await db
-          .collection("students")
-          .get();
-
-      const staff =
-        snapshot.docs
-          .map(doc => ({
-            uid: doc.id,
-            ...doc.data()
-          }))
-          .filter(user =>
-            [
-              "SECURITY",
-              "ADMIN",
-              "SUPER_ADMIN"
-            ].includes(user.role)
-          );
-
-      res.json({
-        success: true,
-        staff
-      });
-
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error:
-          "Unable to load staff."
-      });
-    }
-  }
-);
-
-// ============================================================
-// BLOCK / UNBLOCK USER
-// ============================================================
-
-app.post(
-  "/api/users/:uid/status",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
-    try {
-      const targetUid =
-        clean(
-          req.params.uid,
-          200
-        );
-
-      // Supports both names so old frontend
-      // and new frontend can work.
-      const status =
-        clean(
-          req.body.status ||
-          req.body.accountStatus,
-          50
-        ).toUpperCase();
-
-      if (
-        ![
-          "ACTIVE",
-          "BLOCKED"
-        ].includes(status)
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Status must be ACTIVE or BLOCKED."
-        });
-      }
-
-      if (
-        targetUid ===
-        req.user.uid
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "You cannot change your own account status."
-        });
-      }
-
-      const targetRef =
+    const counterRef =
         db
-          .collection("students")
-          .doc(targetUid);
+            .collection(
+                "idCounters"
+            )
+            .doc(
+                prefix
+            );
 
-      const targetSnap =
-        await targetRef.get();
 
-      if (!targetSnap.exists) {
-        return res.status(404).json({
-          success: false,
-          error:
-            "User not found."
-        });
-      }
+    return db.runTransaction(
+        async transaction => {
 
-      const targetUser =
-        targetSnap.data();
+            const snap =
+                await transaction.get(
+                    counterRef
+                );
 
-      if (
-        targetUser.role ===
-        "SUPER_ADMIN" &&
-        req.user.role !==
-        "SUPER_ADMIN"
-      ) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "Only Super Admin can modify Super Admin accounts."
-        });
-      }
 
-      await targetRef.update({
-        accountStatus: status,
-        updatedAt:
-          FieldValue.serverTimestamp(),
-        updatedBy:
-          req.user.uid
-      });
+            let nextNumber =
+                1001;
 
-      await auth.updateUser(
-        targetUid,
-        {
-          disabled:
-            status === "BLOCKED"
+
+            if (
+                snap.exists
+            ) {
+
+                nextNumber =
+                    (
+                        Number(
+                            snap.data()
+                                .lastNumber
+                        ) ||
+                        1000
+                    ) + 1;
+
+            } else {
+
+                /*
+                First creation for this
+                prefix.
+                */
+
+                const snapshot =
+                    await db
+                        .collection(
+                            "students"
+                        )
+                        .get();
+
+
+                let maxNumber =
+                    1000;
+
+
+                const escapedPrefix =
+                    prefix.replace(
+                        /[.*+?^${}()|[\]\\]/g,
+                        "\\$&"
+                    );
+
+
+                snapshot.forEach(
+                    doc => {
+
+                        const id =
+                            String(
+                                doc.data()
+                                    .studentId ||
+                                ""
+                            );
+
+
+                        const match =
+                            id.match(
+                                new RegExp(
+                                    "^" +
+                                    escapedPrefix +
+                                    "-(\\d+)$"
+                                )
+                            );
+
+
+                        if (
+                            match
+                        ) {
+
+                            maxNumber =
+                                Math.max(
+                                    maxNumber,
+                                    Number(
+                                        match[1]
+                                    )
+                                );
+                        }
+                    }
+                );
+
+
+                nextNumber =
+                    maxNumber + 1;
+            }
+
+
+            transaction.set(
+                counterRef,
+                {
+
+                    prefix,
+
+                    lastNumber:
+                        nextNumber,
+
+                    updatedAt:
+                        FieldValue.serverTimestamp()
+
+                },
+                {
+                    merge: true
+                }
+            );
+
+
+            return nextNumber;
         }
-      );
+    ).then(
+        number =>
+            `${prefix}-${number}`
+    );
+}
 
-      await createAuditLog({
-        action:
-          status === "BLOCKED"
-            ? "USER_BLOCKED"
-            : "USER_UNBLOCKED",
-        actor: req.user,
-        targetUid,
-        details: {
-          status
-        }
-      });
 
-      res.json({
-        success: true,
-        message:
-          `User ${status.toLowerCase()} successfully.`,
-        accountStatus:
-          status
-      });
-
-    } catch (error) {
-      console.error(
-        "Status update error:",
-        error.message
-      );
-
-      res.status(400).json({
-        success: false,
-        error:
-          error.message ||
-          "Unable to update user status."
-      });
-    }
-  }
-);
-
-// ============================================================
-// AUDIT LOGS
-// ============================================================
-
-app.get(
-  "/api/admin/audit-logs",
-  authenticate,
-  requireRoles(
-    "ADMIN",
-    "SUPER_ADMIN"
-  ),
-  async (req, res) => {
-    try {
-      const snapshot =
-        await db
-          .collection("auditLogs")
-          .orderBy(
-            "createdAt",
-            "desc"
-          )
-          .limit(500)
-          .get();
-
-      const logs =
-        snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-      res.json({
-        success: true,
-        logs
-      });
-
-    } catch (error) {
-      console.error(
-        "Audit logs error:",
-        error.message
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Unable to load audit logs."
-      });
-    }
-  }
-);
-
-// ============================================================
-// LOGOUT
-// ============================================================
+/*
+============================================================
+ SUPER ADMIN CREATE USER
+============================================================
+*/
 
 app.post(
-  "/api/logout",
-  authenticate,
-  async (req, res) => {
-    try {
-      await createAuditLog({
-        action: "LOGOUT",
-        actor: req.user,
-        targetUid:
-          req.user.uid
-      });
+    "/api/super-admin/create-user",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
 
-      res.json({
-        success: true,
-        message:
-          "Logout recorded successfully."
-      });
+        try {
 
-    } catch (error) {
-      res.json({
-        success: true
-      });
+            const name =
+                clean(
+                    req.body.name,
+                    200
+                );
+
+            const email =
+                clean(
+                    req.body.email,
+                    200
+                )
+                .toLowerCase();
+
+
+            const password =
+                String(
+                    req.body.password ||
+                    ""
+                );
+
+
+            const role =
+                clean(
+                    req.body.role,
+                    50
+                )
+                .toUpperCase();
+
+
+            const studentType =
+                clean(
+                    req.body.studentType,
+                    100
+                );
+
+
+            const allowedRoles = [
+
+                "STUDENT",
+
+                "SECURITY",
+
+                "ADMIN",
+
+                "SUPER_ADMIN"
+
+            ];
+
+
+            if (
+                !allowedRoles.includes(
+                    role
+                )
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        error:
+                            "Invalid role."
+                    });
+            }
+
+
+            if (
+                !name ||
+                !email ||
+                password.length < 8
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        error:
+                            "Valid name, email and password are required."
+                    });
+            }
+
+
+            const prefix =
+                role === "STUDENT"
+                    ? "SRMAP-STU"
+                    : role === "SECURITY"
+                        ? "SRMAP-SEC"
+                        : role === "ADMIN"
+                            ? "SRMAP-ADM"
+                            : "SRMAP-SADM";
+
+
+            const generatedId =
+                await generateNextId(
+                    prefix
+                );
+
+
+            const user =
+                await auth.createUser({
+
+                    email,
+
+                    password,
+
+                    displayName:
+                        name
+                });
+
+
+            try {
+
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .doc(
+                        user.uid
+                    )
+                    .set({
+
+                        uid:
+                            user.uid,
+
+                        email,
+
+                        name,
+
+                        studentId:
+                            generatedId,
+
+                        studentType:
+                            role === "STUDENT"
+                                ? (
+                                    studentType ||
+                                    "Day Scholar"
+                                )
+                                : "STAFF",
+
+                        role,
+
+                        accountStatus:
+                            "ACTIVE",
+
+                        createdAt:
+                            FieldValue.serverTimestamp(),
+
+                        createdBy:
+                            req.user.uid
+                    });
+
+            } catch (error) {
+
+                try {
+
+                    await auth.deleteUser(
+                        user.uid
+                    );
+
+                } catch (_) {}
+
+                throw error;
+            }
+
+
+            await audit(
+                req.user.uid,
+                req.user.role,
+                "USER_CREATED",
+                user.uid,
+                {
+                    role,
+
+                    studentId:
+                        generatedId
+                }
+            );
+
+
+            return res
+                .status(201)
+                .json({
+
+                    success: true,
+
+                    message:
+                        `${role} account created successfully.`,
+
+                    user: {
+
+                        uid:
+                            user.uid,
+
+                        name,
+
+                        email,
+
+                        role,
+
+                        studentId:
+                            generatedId,
+
+                        accountStatus:
+                            "ACTIVE"
+                    }
+                });
+
+        } catch (error) {
+
+            console.error(
+                "Create user error:",
+                error.message
+            );
+
+
+            if (
+                error.code ===
+                "auth/email-already-exists"
+            ) {
+
+                return res
+                    .status(409)
+                    .json({
+                        success: false,
+                        error:
+                            "An account with this email already exists."
+                    });
+            }
+
+
+            return res
+                .status(500)
+                .json({
+                    success: false,
+                    error:
+                        "Unable to create user."
+                });
+        }
     }
-  }
 );
 
-// ============================================================
-// STATIC WEBSITE
-// ============================================================
 
-app.use(
-  express.static(
-    __dirname,
-    {
-      extensions: ["html"]
+/*
+============================================================
+ CREATE STUDENT
+============================================================
+*/
+
+app.post(
+    "/api/students",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "ADMIN",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const email =
+                clean(
+                    req.body.email,
+                    200
+                )
+                .toLowerCase();
+
+
+            const password =
+                String(
+                    req.body.password ||
+                    ""
+                );
+
+
+            const name =
+                clean(
+                    req.body.name,
+                    200
+                );
+
+
+            const studentType =
+                clean(
+                    req.body.studentType,
+                    100
+                );
+
+
+            if (
+                !email ||
+                !name ||
+                password.length < 8
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        error:
+                            "Valid email, password and name are required."
+                    });
+            }
+
+
+            const studentId =
+                await generateNextId(
+                    "SRMAP-STU"
+                );
+
+
+            const user =
+                await auth.createUser({
+
+                    email,
+
+                    password,
+
+                    displayName:
+                        name
+                });
+
+
+            try {
+
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .doc(
+                        user.uid
+                    )
+                    .set({
+
+                        uid:
+                            user.uid,
+
+                        email,
+
+                        studentId,
+
+                        name,
+
+                        studentType,
+
+                        role:
+                            "STUDENT",
+
+                        accountStatus:
+                            "ACTIVE",
+
+                        createdAt:
+                            FieldValue.serverTimestamp()
+                    });
+
+            } catch (error) {
+
+                try {
+
+                    await auth.deleteUser(
+                        user.uid
+                    );
+
+                } catch (_) {}
+
+                throw error;
+            }
+
+
+            await audit(
+                req.user.uid,
+                req.user.role,
+                "STUDENT_CREATED",
+                user.uid,
+                {
+                    studentId
+                }
+            );
+
+
+            return res.json({
+
+                success: true,
+
+                message:
+                    "Student created successfully.",
+
+                uid:
+                    user.uid,
+
+                studentId
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Create student error:",
+                error.message
+            );
+
+
+            return res
+                .status(400)
+                .json({
+
+                    success: false,
+
+                    error:
+                        error.message ||
+                        "Could not create student."
+                });
+        }
     }
-  )
 );
 
-// ============================================================
-// 404 API HANDLER
-// ============================================================
 
-app.use(
-  "/api",
-  (req, res) => {
-    res.status(404).json({
-      success: false,
-      error: "API endpoint not found."
-    });
-  }
+/*
+============================================================
+ CREATE STAFF
+============================================================
+*/
+
+app.post(
+    "/api/admins",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "ADMIN",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const email =
+                clean(
+                    req.body.email,
+                    200
+                )
+                .toLowerCase();
+
+
+            const password =
+                String(
+                    req.body.password ||
+                    ""
+                );
+
+
+            const name =
+                clean(
+                    req.body.name,
+                    200
+                );
+
+
+            const role =
+                clean(
+                    req.body.role,
+                    50
+                )
+                .toUpperCase();
+
+
+            if (
+                ![
+                    "SECURITY",
+                    "ADMIN",
+                    "SUPER_ADMIN"
+                ].includes(
+                    role
+                )
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        error:
+                            "Invalid staff role."
+                    });
+            }
+
+
+            if (
+                req.user.role !==
+                    "SUPER_ADMIN" &&
+                role ===
+                    "SUPER_ADMIN"
+            ) {
+
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        error:
+                            "Only SUPER_ADMIN can create SUPER_ADMIN accounts."
+                    });
+            }
+
+
+            if (
+                !email ||
+                !name ||
+                password.length < 8
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        error:
+                            "Valid email, password and name are required."
+                    });
+            }
+
+
+            const prefix =
+                role === "SECURITY"
+                    ? "SRMAP-SEC"
+                    : role === "ADMIN"
+                        ? "SRMAP-ADM"
+                        : "SRMAP-SADM";
+
+
+            const staffId =
+                await generateNextId(
+                    prefix
+                );
+
+
+            const user =
+                await auth.createUser({
+
+                    email,
+
+                    password,
+
+                    displayName:
+                        name
+                });
+
+
+            try {
+
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .doc(
+                        user.uid
+                    )
+                    .set({
+
+                        uid:
+                            user.uid,
+
+                        email,
+
+                        name,
+
+                        studentId:
+                            staffId,
+
+                        studentType:
+                            "STAFF",
+
+                        role,
+
+                        accountStatus:
+                            "ACTIVE",
+
+                        createdAt:
+                            FieldValue.serverTimestamp()
+                    });
+
+            } catch (error) {
+
+                try {
+
+                    await auth.deleteUser(
+                        user.uid
+                    );
+
+                } catch (_) {}
+
+                throw error;
+            }
+
+
+            await audit(
+                req.user.uid,
+                req.user.role,
+                "STAFF_CREATED",
+                user.uid,
+                {
+                    role,
+
+                    studentId:
+                        staffId
+                }
+            );
+
+
+            return res.json({
+
+                success: true,
+
+                message:
+                    "Staff account created.",
+
+                uid:
+                    user.uid,
+
+                studentId:
+                    staffId,
+
+                role
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Create staff error:",
+                error.message
+            );
+
+
+            return res
+                .status(400)
+                .json({
+
+                    success: false,
+
+                    error:
+                        error.message ||
+                        "Could not create staff."
+                });
+        }
+    }
 );
 
-// ============================================================
-// GENERAL ERROR HANDLER
-// ============================================================
 
-app.use(
-  (error, req, res, next) => {
+/*
+============================================================
+ ALL USERS
+============================================================
+*/
+
+app.get(
+    "/api/admin/users",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "ADMIN",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const snapshot =
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .limit(500)
+                    .get();
+
+
+            const users =
+                snapshot.docs
+                    .map(
+                        doc => ({
+                            uid:
+                                doc.id,
+
+                            ...doc.data()
+                        })
+                    )
+                    .sort(
+                        (
+                            a,
+                            b
+                        ) =>
+                            String(
+                                a.name ||
+                                ""
+                            ).localeCompare(
+                                String(
+                                    b.name ||
+                                    ""
+                                )
+                            )
+                    );
+
+
+            return res.json({
+
+                success: true,
+
+                users
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Users list error:",
+                error.message
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to load users."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ STUDENTS
+============================================================
+*/
+
+app.get(
+    "/api/students",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "ADMIN",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const snapshot =
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .where(
+                        "role",
+                        "==",
+                        "STUDENT"
+                    )
+                    .limit(500)
+                    .get();
+
+
+            const students =
+                snapshot.docs.map(
+                    doc => ({
+                        uid:
+                            doc.id,
+
+                        ...doc.data()
+                    })
+                );
+
+
+            return res.json({
+
+                success: true,
+
+                students
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Students list error:",
+                error.message
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to load students."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ STAFF
+============================================================
+*/
+
+app.get(
+    "/api/admin/staff",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "ADMIN",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const snapshot =
+                await db
+                    .collection(
+                        "students"
+                    )
+                    .where(
+                        "role",
+                        "in",
+                        [
+                            "SECURITY",
+                            "ADMIN",
+                            "SUPER_ADMIN"
+                        ]
+                    )
+                    .limit(500)
+                    .get();
+
+
+            const staff =
+                snapshot.docs.map(
+                    doc => ({
+                        uid:
+                            doc.id,
+
+                        ...doc.data()
+                    })
+                );
+
+
+            return res.json({
+
+                success: true,
+
+                staff
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Staff list error:",
+                error.message
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to load staff."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ BLOCK / ACTIVATE USER
+============================================================
+*/
+
+app.post(
+    "/api/users/:uid/status",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "ADMIN",
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const uid =
+                clean(
+                    req.params.uid,
+                    200
+                );
+
+
+            const status =
+                clean(
+                    req.body.status,
+                    50
+                )
+                .toUpperCase();
+
+
+            if (
+                uid ===
+                req.user.uid
+            ) {
+
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        error:
+                            "You cannot change your own account status."
+                    });
+            }
+
+
+            if (
+                ![
+                    "ACTIVE",
+                    "BLOCKED"
+                ].includes(
+                    status
+                )
+            ) {
+
+                return res
+                    .status(400)
+                    .json({
+                        success: false,
+                        error:
+                            "Invalid account status."
+                    });
+            }
+
+
+            const ref =
+                db
+                    .collection(
+                        "students"
+                    )
+                    .doc(uid);
+
+
+            const snap =
+                await ref.get();
+
+
+            if (
+                !snap.exists
+            ) {
+
+                return res
+                    .status(404)
+                    .json({
+                        success: false,
+                        error:
+                            "User not found."
+                    });
+            }
+
+
+            const target =
+                snap.data();
+
+
+            if (
+                target.role ===
+                    "SUPER_ADMIN" &&
+                req.user.role !==
+                    "SUPER_ADMIN"
+            ) {
+
+                return res
+                    .status(403)
+                    .json({
+                        success: false,
+                        error:
+                            "Only SUPER_ADMIN can modify SUPER_ADMIN."
+                    });
+            }
+
+
+            await ref.update({
+
+                accountStatus:
+                    status,
+
+                updatedAt:
+                    FieldValue.serverTimestamp()
+            });
+
+
+            await auth.updateUser(
+                uid,
+                {
+                    disabled:
+                        status ===
+                        "BLOCKED"
+                }
+            );
+
+
+            profileCache.delete(
+                uid
+            );
+
+
+            await audit(
+                req.user.uid,
+                req.user.role,
+                status ===
+                    "BLOCKED"
+                    ? "USER_BLOCKED"
+                    : "USER_UNBLOCKED",
+                uid
+            );
+
+
+            return res.json({
+
+                success: true,
+
+                message:
+                    status ===
+                    "BLOCKED"
+                        ? "User blocked."
+                        : "User activated."
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Status update error:",
+                error.message
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to update account status."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ AUDIT LOGS
+============================================================
+*/
+
+app.get(
+    "/api/admin/audit-logs",
+    adminLimiter,
+    authenticate,
+    requireRoles(
+        "SUPER_ADMIN"
+    ),
+    async (
+        req,
+        res
+    ) => {
+
+        try {
+
+            const snapshot =
+                await db
+                    .collection(
+                        "auditLogs"
+                    )
+                    .limit(200)
+                    .get();
+
+
+            const logs =
+                snapshot.docs
+                    .map(
+                        doc => ({
+                            id:
+                                doc.id,
+
+                            ...doc.data()
+                        })
+                    )
+                    .sort(
+                        (
+                            a,
+                            b
+                        ) => {
+
+                            const aTime =
+                                safeDate(
+                                    a.createdAt
+                                )?.getTime() ||
+                                0;
+
+                            const bTime =
+                                safeDate(
+                                    b.createdAt
+                                )?.getTime() ||
+                                0;
+
+                            return (
+                                bTime -
+                                aTime
+                            );
+                        }
+                    );
+
+
+            return res.json({
+
+                success: true,
+
+                logs
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Audit list error:",
+                error.message
+            );
+
+
+            return res
+                .status(500)
+                .json({
+
+                    success: false,
+
+                    error:
+                        "Unable to load audit logs."
+                });
+        }
+    }
+);
+
+
+/*
+============================================================
+ LOGOUT
+============================================================
+*/
+
+app.post(
+    "/api/logout",
+    authLimiter,
+    authenticate,
+    async (
+        req,
+        res
+    ) => {
+
+        audit(
+            req.user.uid,
+            req.user.role,
+            "LOGOUT"
+        );
+
+
+        return res.json({
+
+            success: true
+        });
+    }
+);
+
+
+/*
+============================================================
+ STATIC WEBSITE
+============================================================
+*/
+
+/*
+IMPORTANT:
+Only files inside /public are exposed.
+
+firebase-service-account.json
+.env
+server.js
+package.json
+
+are NOT publicly accessible.
+*/
+
+if (
+    fs.existsSync(
+        PUBLIC_DIR
+    )
+) {
+
+    app.use(
+        express.static(
+            PUBLIC_DIR,
+            {
+
+                extensions: [
+                    "html"
+                ],
+
+                dotfiles:
+                    "deny",
+
+                index:
+                    "index.html",
+
+                maxAge:
+                    process.env.NODE_ENV ===
+                    "production"
+                        ? "1h"
+                        : 0
+            }
+        )
+    );
+
+} else {
+
     console.error(
-      "Server error:",
-      error
+        "WARNING: public folder does not exist."
     );
+}
 
-    res.status(500).json({
-      success: false,
-      error:
-        "Internal server error."
-    });
-  }
+
+/*
+============================================================
+ API 404
+============================================================
+*/
+
+app.use(
+    "/api",
+    (
+        req,
+        res
+    ) => {
+
+        return res
+            .status(404)
+            .json({
+
+                success: false,
+
+                error:
+                    "API endpoint not found."
+            });
+    }
 );
 
-// ============================================================
-// START SERVER
-// ============================================================
 
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log("");
-    console.log(
-      "========================================"
+/*
+============================================================
+ GLOBAL ERROR HANDLER
+============================================================
+*/
+
+app.use(
+    (
+        error,
+        req,
+        res,
+        next
+    ) => {
+
+        console.error(
+            "Unhandled Express error:",
+            error.message
+        );
+
+
+        if (
+            res.headersSent
+        ) {
+
+            return next(
+                error
+            );
+        }
+
+
+        return res
+            .status(500)
+            .json({
+
+                success: false,
+
+                error:
+                    "Internal server error."
+            });
+    }
+);
+
+
+/*
+============================================================
+ START SERVER
+============================================================
+*/
+
+const server =
+    app.listen(
+        PORT,
+        "0.0.0.0",
+        () => {
+
+            console.log("");
+            console.log(
+                "========================================"
+            );
+            console.log(
+                " SRM AP DAYPASS SERVER"
+            );
+            console.log(
+                "========================================"
+            );
+            console.log(
+                `Server running on port ${PORT}`
+            );
+            console.log(
+                "Firebase authentication enabled"
+            );
+            console.log(
+                "Secure QR enabled"
+            );
+            console.log(
+                "Atomic daily entry limit enabled"
+            );
+            console.log(
+                "One-time QR protection enabled"
+            );
+            console.log(
+                "Human verifier names enabled"
+            );
+            console.log(
+                "Rate limiting enabled"
+            );
+            console.log(
+                "Protected public directory enabled"
+            );
+            console.log(
+                "========================================"
+            );
+            console.log("");
+        }
     );
+
+
+/*
+============================================================
+ SERVER TIMEOUTS
+============================================================
+*/
+
+server.requestTimeout =
+    30 * 1000;
+
+server.headersTimeout =
+    35 * 1000;
+
+server.keepAliveTimeout =
+    5 * 1000;
+
+
+/*
+============================================================
+ SERVER ERROR
+============================================================
+*/
+
+server.on(
+    "error",
+    error => {
+
+        console.error(
+            "HTTP server error:",
+            error.message
+        );
+
+
+        /*
+        Do not immediately kill the server
+        for ordinary HTTP errors.
+        */
+
+        if (
+            error.code ===
+            "EADDRINUSE"
+        ) {
+
+            console.error(
+                `Port ${PORT} is already in use.`
+            );
+
+            process.exit(1);
+        }
+    }
+);
+
+
+/*
+============================================================
+ PROCESS ERROR HANDLING
+============================================================
+*/
+
+/*
+A truly fatal Node process error should not
+leave the application in an unknown state.
+
+The hosting platform can restart it.
+*/
+
+process.on(
+    "uncaughtException",
+    error => {
+
+        console.error(
+            "FATAL uncaught exception:",
+            error
+        );
+
+        server.close(
+            () => {
+                process.exit(1);
+            }
+        );
+    }
+);
+
+
+process.on(
+    "unhandledRejection",
+    reason => {
+
+        console.error(
+            "FATAL unhandled promise rejection:",
+            reason
+        );
+
+        server.close(
+            () => {
+                process.exit(1);
+            }
+        );
+    }
+);
+
+
+/*
+============================================================
+ GRACEFUL SHUTDOWN
+============================================================
+*/
+
+let shuttingDown =
+    false;
+
+
+async function shutdown(
+    signal
+) {
+
+    if (
+        shuttingDown
+    ) {
+        return;
+    }
+
+
+    shuttingDown =
+        true;
+
+
     console.log(
-      " SRM AP DAYPASS SERVER"
+        `${signal} received. Shutting down safely...`
     );
-    console.log(
-      "========================================"
+
+
+    server.close(
+        async () => {
+
+            try {
+
+                /*
+                Give active Firebase requests
+                a short opportunity to finish.
+                */
+
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            1000
+                        )
+                );
+
+            } catch (_) {}
+
+
+            process.exit(0);
+        }
     );
-    console.log(
-      `✅ Server running on port ${PORT}`
-    );
-    console.log(
-      `🌐 http://localhost:${PORT}`
-    );
-    console.log(
-      "🔐 Firebase authentication enabled"
-    );
-    console.log(
-      "🎫 Student QR enabled"
-    );
-    console.log(
-      "🛡️ Security verification enabled"
-    );
-    console.log(
-      "📋 Entry history enabled"
-    );
-    console.log(
-      "👥 Role management enabled"
-    );
-    console.log(
-      "📝 Audit logging enabled"
-    );
-    console.log(
-      "========================================"
-    );
-    console.log("");
-  }
+
+
+    setTimeout(
+        () => {
+            process.exit(1);
+        },
+        10000
+    ).unref();
+}
+
+
+process.on(
+    "SIGINT",
+    () =>
+        shutdown(
+            "SIGINT"
+        )
+);
+
+
+process.on(
+    "SIGTERM",
+    () =>
+        shutdown(
+            "SIGTERM"
+        )
 );
