@@ -2,17 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Security Portal | SRM AP EntryPass</title>
+    <meta
+        name="robots"
+        content="noindex,nofollow"
+    >
 
-    <script
-        src="https://unpkg.com/html5-qrcode"
-        type="text/javascript">
-    </script>
+    <title>Security Portal | SRM AP DayPass</title>
+
+    <script src="https://unpkg.com/html5-qrcode" defer></script>
 
     <style>
         * {
@@ -21,22 +24,8 @@
             padding: 0;
         }
 
-        :root {
-            --bg: #060914;
-            --panel: rgba(15, 23, 42, .82);
-            --panel-light: rgba(30, 41, 59, .55);
-            --border: rgba(255,255,255,.09);
-            --text: #f8fafc;
-            --muted: #94a3b8;
-            --purple: #6366f1;
-            --violet: #8b5cf6;
-            --green: #22c55e;
-            --red: #ef4444;
-        }
-
         body {
             min-height: 100vh;
-            color: var(--text);
             font-family:
                 Inter,
                 system-ui,
@@ -47,633 +36,264 @@
 
             background:
                 radial-gradient(
-                    circle at 10% 10%,
-                    rgba(99,102,241,.18),
-                    transparent 28%
-                ),
-                radial-gradient(
-                    circle at 90% 20%,
-                    rgba(139,92,246,.15),
-                    transparent 30%
-                ),
-                radial-gradient(
-                    circle at 50% 100%,
-                    rgba(14,165,233,.08),
+                    circle at top left,
+                    #172554,
                     transparent 35%
                 ),
-                var(--bg);
+                radial-gradient(
+                    circle at bottom right,
+                    #312e81,
+                    transparent 35%
+                ),
+                #020617;
 
-            overflow-x: hidden;
+            color: #f8fafc;
+            padding: 20px;
         }
 
-        /* =========================
-           LOADING
-        ========================== */
+        .container {
+            width: min(1100px, 100%);
+            margin: auto;
+        }
 
-        #loadingScreen {
-            position: fixed;
-            inset: 0;
-            z-index: 9999;
-
+        header {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-
-            background: #060914;
-        }
-
-        #loadingScreen.hidden {
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity .35s ease;
-        }
-
-        .loader {
-            width: 46px;
-            height: 46px;
-
-            border: 3px solid rgba(255,255,255,.10);
-            border-top-color: var(--purple);
-
-            border-radius: 50%;
-
-            animation: spin .8s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .loading-text {
-            margin-top: 15px;
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        /* =========================
-           HEADER
-        ========================== */
-
-        .header {
-            height: 76px;
-
-            display: flex;
-            align-items: center;
             justify-content: space-between;
-
-            padding: 0 30px;
-
-            position: sticky;
-            top: 0;
-            z-index: 100;
-
-            background: rgba(6,9,20,.78);
-            backdrop-filter: blur(22px);
-            -webkit-backdrop-filter: blur(22px);
-
-            border-bottom: 1px solid var(--border);
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 24px;
         }
 
         .brand {
             display: flex;
             align-items: center;
-            gap: 13px;
+            gap: 14px;
         }
 
-        .brand-icon {
-            width: 43px;
-            height: 43px;
+        .logo {
+            width: 48px;
+            height: 48px;
+            border-radius: 15px;
 
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            border-radius: 13px;
+            display: grid;
+            place-items: center;
 
             background:
                 linear-gradient(
                     135deg,
-                    var(--purple),
-                    var(--violet)
+                    #2563eb,
+                    #7c3aed
                 );
 
-            box-shadow:
-                0 10px 35px rgba(99,102,241,.3);
-
-            font-size: 21px;
-        }
-
-        .brand-name {
-            font-size: 16px;
+            font-size: 22px;
             font-weight: 800;
-        }
-
-        .brand-subtitle {
-            color: var(--muted);
-            font-size: 11px;
-            margin-top: 2px;
-        }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .secure-badge {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-
-            padding: 8px 12px;
-
-            border-radius: 50px;
-
-            background: rgba(34,197,94,.07);
-            border: 1px solid rgba(34,197,94,.18);
-
-            color: #86efac;
-            font-size: 11px;
-        }
-
-        .green-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-
-            background: var(--green);
 
             box-shadow:
-                0 0 12px var(--green);
+                0 12px 35px rgba(37, 99, 235, .3);
+        }
+
+        h1 {
+            font-size: 22px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 13px;
+            margin-top: 3px;
+        }
+
+        button {
+            border: 0;
+            cursor: pointer;
+            font: inherit;
         }
 
         .logout {
-            border: 1px solid var(--border);
-            background: rgba(255,255,255,.04);
-            color: #cbd5e1;
+            padding: 10px 16px;
+            border-radius: 12px;
 
-            padding: 9px 14px;
-            border-radius: 10px;
+            background: rgba(255,255,255,.08);
+            border: 1px solid rgba(255,255,255,.12);
 
-            cursor: pointer;
-            font-weight: 600;
-
-            transition: .2s;
+            color: #fff;
         }
 
         .logout:hover {
-            background: rgba(239,68,68,.10);
-            border-color: rgba(239,68,68,.25);
-            color: #fca5a5;
+            background: rgba(255,255,255,.14);
         }
-
-        /* =========================
-           MAIN
-        ========================== */
-
-        .container {
-            width: min(1180px, calc(100% - 32px));
-            margin: auto;
-
-            padding: 38px 0 60px;
-        }
-
-        .eyebrow {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-
-            color: #a5b4fc;
-            font-size: 11px;
-            font-weight: 800;
-
-            letter-spacing: 1.4px;
-            text-transform: uppercase;
-        }
-
-        .eyebrow::before {
-            content: "";
-
-            width: 21px;
-            height: 2px;
-
-            border-radius: 20px;
-
-            background:
-                linear-gradient(
-                    90deg,
-                    var(--purple),
-                    var(--violet)
-                );
-        }
-
-        .hero {
-            margin-bottom: 28px;
-        }
-
-        .hero h1 {
-            margin-top: 10px;
-
-            font-size: clamp(30px, 5vw, 43px);
-            line-height: 1;
-
-            letter-spacing: -1.8px;
-        }
-
-        .hero p {
-            color: var(--muted);
-            margin-top: 11px;
-            font-size: 14px;
-        }
-
-        /* =========================
-           STATS
-        ========================== */
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-
-            margin-bottom: 20px;
-        }
-
-        .stat {
-            position: relative;
-            overflow: hidden;
-
-            padding: 20px;
-
-            border: 1px solid var(--border);
-            border-radius: 20px;
-
-            background:
-                linear-gradient(
-                    145deg,
-                    rgba(255,255,255,.055),
-                    rgba(255,255,255,.018)
-                );
-
-            backdrop-filter: blur(15px);
-        }
-
-        .stat-label {
-            color: var(--muted);
-            font-size: 11px;
-        }
-
-        .stat-number {
-            margin-top: 8px;
-
-            font-size: 28px;
-            font-weight: 850;
-        }
-
-        .stat-icon {
-            position: absolute;
-            right: 17px;
-            top: 17px;
-
-            width: 39px;
-            height: 39px;
-
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            border-radius: 12px;
-
-            background: rgba(99,102,241,.11);
-        }
-
-        /* =========================
-           GRID
-        ========================== */
 
         .grid {
             display: grid;
-            grid-template-columns: 1.08fr .92fr;
+            grid-template-columns:
+                minmax(0, 1.1fr)
+                minmax(0, .9fr);
+
             gap: 20px;
-            align-items: start;
         }
 
         .card {
-            overflow: hidden;
-
-            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, .72);
+            border: 1px solid rgba(255,255,255,.09);
             border-radius: 24px;
-
-            background:
-                linear-gradient(
-                    145deg,
-                    rgba(15,23,42,.9),
-                    rgba(15,23,42,.62)
-                );
-
-            backdrop-filter: blur(20px);
+            padding: 22px;
 
             box-shadow:
-                0 20px 70px rgba(0,0,0,.22);
+                0 20px 60px rgba(0,0,0,.28);
+
+            backdrop-filter: blur(18px);
         }
 
-        .card-header {
-            padding: 20px 22px;
-
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-
-            border-bottom: 1px solid var(--border);
-        }
-
-        .card-title {
-            font-size: 15px;
-            font-weight: 800;
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 6px;
         }
 
         .card-description {
-            color: var(--muted);
-            font-size: 11px;
-            margin-top: 4px;
-        }
-
-        .live {
-            padding: 6px 9px;
-
-            border-radius: 50px;
-
-            color: #86efac;
-            background: rgba(34,197,94,.07);
-            border: 1px solid rgba(34,197,94,.16);
-
-            font-size: 10px;
-            font-weight: 700;
-        }
-
-        /* =========================
-           SCANNER
-        ========================== */
-
-        .scanner-content {
-            padding: 23px;
+            color: #94a3b8;
+            font-size: 13px;
+            margin-bottom: 18px;
         }
 
         #reader {
             width: 100%;
-            min-height: 320px;
-
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            min-height: 280px;
 
             overflow: hidden;
 
             border-radius: 18px;
+            background: #000;
 
-            background:
-                radial-gradient(
-                    circle,
-                    rgba(99,102,241,.10),
-                    rgba(2,6,23,.85)
-                );
-
-            border: 1px solid rgba(255,255,255,.08);
+            border: 1px solid rgba(255,255,255,.1);
         }
 
-        #reader video {
-            width: 100% !important;
-            max-height: 380px;
-
-            object-fit: cover !important;
-
-            border-radius: 17px !important;
-        }
-
-        #reader__scan_region {
-            border-radius: 17px !important;
-        }
-
-        #reader__dashboard {
-            display: none !important;
-        }
-
-        .buttons {
+        .scanner-buttons {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
-
-            margin-top: 14px;
+            gap: 12px;
+            margin-top: 15px;
         }
 
         .btn {
-            padding: 13px;
+            padding: 13px 16px;
+            border-radius: 13px;
 
-            border-radius: 12px;
-
-            font-size: 13px;
-            font-weight: 750;
-
-            cursor: pointer;
-
-            transition:
-                transform .2s,
-                opacity .2s;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-        }
-
-        .btn-primary {
             color: white;
-            border: 0;
+            font-weight: 700;
 
             background:
                 linear-gradient(
                     135deg,
-                    var(--purple),
-                    var(--violet)
+                    #2563eb,
+                    #4f46e5
                 );
 
             box-shadow:
-                0 10px 30px rgba(99,102,241,.2);
+                0 10px 25px rgba(37,99,235,.2);
         }
 
-        .btn-secondary {
-            color: #cbd5e1;
-
-            background: rgba(255,255,255,.04);
-            border: 1px solid var(--border);
+        .btn.secondary {
+            background: rgba(255,255,255,.07);
+            border: 1px solid rgba(255,255,255,.12);
+            box-shadow: none;
         }
 
-        .scanner-info {
-            text-align: center;
-
-            color: var(--muted);
-
-            font-size: 11px;
-
-            margin-top: 12px;
+        .btn:hover {
+            transform: translateY(-1px);
         }
 
-        /* =========================
-           RESULT
-        ========================== */
+        #qr-file {
+            display: none;
+        }
 
-        #result {
+        .message {
+            margin-top: 16px;
+            padding: 14px;
+            border-radius: 14px;
+
             display: none;
 
-            margin: 0 23px 23px;
-            padding: 16px;
-
-            border-radius: 16px;
-
-            animation: slideIn .3s ease;
+            font-size: 14px;
+            line-height: 1.5;
         }
 
-        #result.show {
+        .message.show {
             display: block;
         }
 
-        #result.success {
-            background: rgba(34,197,94,.08);
-            border: 1px solid rgba(34,197,94,.22);
+        .message.error {
+            background: rgba(127,29,29,.25);
+            border: 1px solid rgba(248,113,113,.25);
+            color: #fecaca;
         }
 
-        #result.error {
-            background: rgba(239,68,68,.08);
-            border: 1px solid rgba(239,68,68,.22);
+        .message.success {
+            background: rgba(20,83,45,.25);
+            border: 1px solid rgba(74,222,128,.25);
+            color: #bbf7d0;
         }
 
-        #resultTitle {
-            font-size: 14px;
-            font-weight: 800;
+        .message.info {
+            background: rgba(30,64,175,.2);
+            border: 1px solid rgba(96,165,250,.25);
+            color: #bfdbfe;
         }
 
-        #resultMessage {
-            margin-top: 5px;
-            color: #cbd5e1;
-            font-size: 12px;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(8px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* =========================
-           DETAILS
-        ========================== */
-
-        #details {
-            min-height: 300px;
+        .result {
+            min-height: 100%;
         }
 
         .empty {
             min-height: 300px;
 
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-direction: column;
-
-            padding: 30px;
+            display: grid;
+            place-items: center;
 
             text-align: center;
+            color: #64748b;
         }
 
         .empty-icon {
-            width: 62px;
-            height: 62px;
-
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            border-radius: 18px;
-
-            background: rgba(99,102,241,.08);
-
-            font-size: 25px;
-
-            margin-bottom: 14px;
+            font-size: 52px;
+            margin-bottom: 10px;
         }
 
-        .empty strong {
-            font-size: 14px;
+        .student-card {
+            display: none;
         }
 
-        .empty span {
-            margin-top: 6px;
-
-            color: var(--muted);
-            font-size: 11px;
-
-            max-width: 270px;
-            line-height: 1.6;
+        .student-card.show {
+            display: block;
         }
 
-        .student {
-            padding: 22px;
-        }
+        .status {
+            display: inline-flex;
+            padding: 7px 12px;
+            border-radius: 999px;
 
-        .student-head {
-            display: flex;
-            align-items: center;
-            gap: 13px;
+            background: rgba(34,197,94,.12);
+            color: #86efac;
 
-            padding-bottom: 18px;
-            margin-bottom: 17px;
+            font-size: 12px;
+            font-weight: 800;
 
-            border-bottom: 1px solid var(--border);
-        }
-
-        .avatar {
-            width: 48px;
-            height: 48px;
-
-            flex-shrink: 0;
-
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            border-radius: 15px;
-
-            background:
-                linear-gradient(
-                    135deg,
-                    var(--purple),
-                    var(--violet)
-                );
-
-            font-weight: 850;
+            margin-bottom: 18px;
         }
 
         .student-name {
-            font-size: 16px;
+            font-size: 27px;
             font-weight: 800;
+            margin-bottom: 5px;
         }
 
-        .student-sub {
-            color: var(--muted);
-            font-size: 11px;
-            margin-top: 3px;
+        .student-email {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 22px;
         }
 
-        .details-list {
+        .details {
             display: grid;
-            gap: 8px;
+            gap: 10px;
         }
 
         .detail {
@@ -681,134 +301,78 @@
             justify-content: space-between;
             gap: 15px;
 
-            padding: 11px 13px;
+            padding: 13px 15px;
 
-            border-radius: 11px;
-
-            background: rgba(255,255,255,.025);
-            border: 1px solid rgba(255,255,255,.045);
+            border-radius: 13px;
+            background: rgba(255,255,255,.045);
         }
 
-        .detail-label {
-            color: var(--muted);
-            font-size: 11px;
+        .detail span:first-child {
+            color: #94a3b8;
         }
 
-        .detail-value {
-            color: #e2e8f0;
-
-            font-size: 11px;
-            font-weight: 700;
-
+        .detail span:last-child {
             text-align: right;
-
-            word-break: break-word;
+            font-weight: 700;
         }
 
         .allowed {
-            color: #86efac !important;
+            margin-top: 18px;
+            padding: 16px;
+
+            border-radius: 16px;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    rgba(22,163,74,.16),
+                    rgba(34,197,94,.05)
+                );
+
+            border: 1px solid rgba(74,222,128,.2);
+
+            color: #bbf7d0;
+            font-weight: 700;
         }
 
-        /* =========================
-           TOAST
-        ========================== */
+        .blocked {
+            background:
+                linear-gradient(
+                    135deg,
+                    rgba(220,38,38,.16),
+                    rgba(127,29,29,.05)
+                );
 
-        #toast {
-            position: fixed;
+            border-color: rgba(248,113,113,.2);
+            color: #fecaca;
+        }
 
-            right: 20px;
-            bottom: 20px;
-
-            z-index: 10000;
-
-            max-width: 350px;
-
-            padding: 13px 16px;
-
-            border-radius: 13px;
-
-            background: rgba(15,23,42,.96);
-            border: 1px solid var(--border);
-
-            color: #e2e8f0;
-
+        .security-note {
+            margin-top: 18px;
+            color: #64748b;
             font-size: 12px;
-
-            box-shadow:
-                0 20px 50px rgba(0,0,0,.4);
-
-            transform: translateY(90px);
-            opacity: 0;
-
-            transition: .3s;
+            line-height: 1.6;
         }
 
-        #toast.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
+        @media (max-width: 800px) {
+            body {
+                padding: 12px;
+            }
 
-        #toast.success {
-            border-color: rgba(34,197,94,.25);
-        }
-
-        #toast.error {
-            border-color: rgba(239,68,68,.25);
-        }
-
-        /* =========================
-           MOBILE
-        ========================== */
-
-        @media (max-width: 850px) {
+            header {
+                align-items: flex-start;
+            }
 
             .grid {
                 grid-template-columns: 1fr;
             }
 
-        }
-
-        @media (max-width: 650px) {
-
-            .header {
-                padding: 0 15px;
-            }
-
-            .secure-badge {
-                display: none;
-            }
-
-            .container {
-                width: calc(100% - 20px);
-                padding-top: 25px;
-            }
-
-            .stats {
+            .scanner-buttons {
                 grid-template-columns: 1fr;
             }
 
-            .buttons {
-                grid-template-columns: 1fr;
-            }
-
-            .scanner-content {
-                padding: 15px;
-            }
-
-            #result {
-                margin: 0 15px 15px;
-            }
-
-            #reader {
-                min-height: 270px;
-            }
-
-            .brand-subtitle {
-                display: none;
-            }
-
-            .hero h1 {
-                font-size: 31px;
+            .student-name {
+                font-size: 23px;
             }
         }
     </style>
@@ -816,443 +380,325 @@
 
 <body>
 
-<!-- =========================
-     LOADING
-========================== -->
+<div class="container">
 
-<div id="loadingScreen">
+    <header>
 
-    <div class="loader"></div>
+        <div class="brand">
 
-    <div class="loading-text">
-        Securing Security Portal...
-    </div>
-
-</div>
-
-
-<!-- =========================
-     HEADER
-========================== -->
-
-<header class="header">
-
-    <div class="brand">
-
-        <div class="brand-icon">
-            🛡️
-        </div>
-
-        <div>
-
-            <div class="brand-name">
-                SRM AP EntryPass
+            <div class="logo">
+                S
             </div>
 
-            <div class="brand-subtitle">
-                Security Verification Portal
+            <div>
+                <h1>Security Portal</h1>
+
+                <div class="subtitle">
+                    SRM AP DayPass • Entry Verification
+                </div>
             </div>
 
         </div>
-
-    </div>
-
-
-    <div class="header-right">
-
-        <div class="secure-badge">
-
-            <span class="green-dot"></span>
-
-            Secure Session
-
-        </div>
-
 
         <button
             class="logout"
-            onclick="logout()"
+            id="logoutBtn"
         >
             Logout
         </button>
 
-    </div>
-
-</header>
+    </header>
 
 
-<!-- =========================
-     MAIN
-========================== -->
+    <main class="grid">
 
-<main class="container">
+        <section class="card">
 
-    <section class="hero">
+            <h2>Verify Day Pass</h2>
 
-        <div class="eyebrow">
-            Security Control
-        </div>
-
-        <h1>
-            QR Verification
-        </h1>
-
-        <p id="welcomeText">
-            Verify student EntryPass QR codes securely.
-        </p>
-
-    </section>
+            <p class="card-description">
+                Scan a student's QR code using the camera
+                or upload a clear QR screenshot.
+            </p>
 
 
-    <!-- =========================
-         STATS
-    ========================== -->
+            <div id="reader"></div>
 
-    <section class="stats">
 
-        <div class="stat">
+            <div class="scanner-buttons">
 
-            <div class="stat-label">
-                Today's Entries
+                <button
+                    class="btn"
+                    id="cameraBtn"
+                    type="button"
+                >
+                    Start Camera
+                </button>
+
+                <button
+                    class="btn secondary"
+                    id="galleryBtn"
+                    type="button"
+                >
+                    Scan from Gallery
+                </button>
+
             </div>
+
+
+            <input
+                id="qr-file"
+                type="file"
+                accept="image/*"
+            >
+
 
             <div
-                id="todayCount"
-                class="stat-number"
-            >
-                0
+                id="message"
+                class="message"
+            ></div>
+
+
+            <div class="security-note">
+                Only valid, unused DayPass QR codes are accepted.
+                Verification is performed by the server.
             </div>
 
-            <div class="stat-icon">
-                📊
-            </div>
-
-        </div>
+        </section>
 
 
-        <div class="stat">
-
-            <div class="stat-label">
-                Scanner Status
-            </div>
+        <section class="card result">
 
             <div
-                id="scannerStatus"
-                class="stat-number"
-                style="font-size:20px"
+                id="emptyResult"
+                class="empty"
             >
-                Ready
-            </div>
-
-            <div class="stat-icon">
-                📷
-            </div>
-
-        </div>
-
-
-        <div class="stat">
-
-            <div class="stat-label">
-                Operator
-            </div>
-
-            <div
-                id="operatorName"
-                class="stat-number"
-                style="font-size:18px"
-            >
-                —
-            </div>
-
-            <div class="stat-icon">
-                👤
-            </div>
-
-        </div>
-
-    </section>
-
-
-    <!-- =========================
-         MAIN GRID
-    ========================== -->
-
-    <section class="grid">
-
-        <!-- =====================
-             SCANNER
-        ====================== -->
-
-        <div class="card">
-
-            <div class="card-header">
-
                 <div>
-
-                    <div class="card-title">
-                        Scan EntryPass
-                    </div>
-
-                    <div class="card-description">
-                        Scan using camera or QR image
-                    </div>
-
-                </div>
-
-                <div class="live">
-                    ● LIVE
-                </div>
-
-            </div>
-
-
-            <div class="scanner-content">
-
-                <div id="reader">
-
-                    <div style="
-                        text-align:center;
-                        color:#64748b;
-                        font-size:13px;
-                    ">
-                        Camera scanner loading...
-                    </div>
-
-                </div>
-
-
-                <div class="buttons">
-
-                    <button
-                        class="btn btn-primary"
-                        onclick="startCamera()"
-                    >
-                        📷 Start Camera
-                    </button>
-
-
-                    <button
-                        class="btn btn-secondary"
-                        onclick="openGallery()"
-                    >
-                        🖼️ Scan Gallery
-                    </button>
-
-                </div>
-
-
-                <div class="scanner-info">
-                    Only valid EntryPass QR codes will be accepted.
-                </div>
-
-            </div>
-
-
-            <!-- RESULT -->
-
-            <div id="result">
-
-                <div id="resultTitle"></div>
-
-                <div id="resultMessage"></div>
-
-            </div>
-
-        </div>
-
-
-        <!-- =====================
-             DETAILS
-        ====================== -->
-
-        <div class="card">
-
-            <div class="card-header">
-
-                <div>
-
-                    <div class="card-title">
-                        Verification Details
-                    </div>
-
-                    <div class="card-description">
-                        Latest verified student
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <div id="details">
-
-                <div class="empty">
 
                     <div class="empty-icon">
                         🔐
                     </div>
 
-                    <strong>
-                        Waiting for QR scan
-                    </strong>
+                    <div>
+                        Scan a DayPass QR code
+                    </div>
 
-                    <span>
-                        Student information will appear here after a QR code is successfully verified.
-                    </span>
+                </div>
+            </div>
 
+
+            <div
+                id="studentCard"
+                class="student-card"
+            >
+
+                <div
+                    id="statusBadge"
+                    class="status"
+                >
+                    VERIFIED
+                </div>
+
+
+                <div
+                    id="studentName"
+                    class="student-name"
+                >
+                    Student
+                </div>
+
+
+                <div
+                    id="studentEmail"
+                    class="student-email"
+                >
+                    -
+                </div>
+
+
+                <div class="details">
+
+                    <div class="detail">
+                        <span>Student ID</span>
+                        <span id="studentId">-</span>
+                    </div>
+
+                    <div class="detail">
+                        <span>Student Type</span>
+                        <span id="studentType">-</span>
+                    </div>
+
+                    <div class="detail">
+                        <span>Verified By</span>
+                        <span id="verifiedBy">-</span>
+                    </div>
+
+                    <div class="detail">
+                        <span>Verified Role</span>
+                        <span id="verifiedRole">-</span>
+                    </div>
+
+                    <div class="detail">
+                        <span>Date & Time</span>
+                        <span id="verifiedAt">-</span>
+                    </div>
+
+                </div>
+
+
+                <div
+                    id="allowedBox"
+                    class="allowed"
+                >
+                    ✓ Entry verified successfully.
                 </div>
 
             </div>
 
-        </div>
+        </section>
 
-    </section>
+    </main>
 
-</main>
-
-
-<!-- TOAST -->
-
-<div id="toast"></div>
+</div>
 
 
 <script>
-
-/* =========================================================
-   GLOBAL VARIABLES
-========================================================= */
-
 "use strict";
 
-let token =
-    sessionStorage.getItem("entrypass_token");
-
-let currentUser = null;
 
 let scanner = null;
-
 let cameraRunning = false;
-
-let processingQR = false;
-
-let lastQR = "";
-
-let lastQRTime = 0;
+let processing = false;
 
 
-/* =========================================================
-   BASIC HELPERS
-========================================================= */
+const reader =
+    document.getElementById("reader");
 
-function get(id) {
-    return document.getElementById(id);
+const message =
+    document.getElementById("message");
+
+const qrFile =
+    document.getElementById("qr-file");
+
+const cameraBtn =
+    document.getElementById("cameraBtn");
+
+const galleryBtn =
+    document.getElementById("galleryBtn");
+
+const logoutBtn =
+    document.getElementById("logoutBtn");
+
+const emptyResult =
+    document.getElementById("emptyResult");
+
+const studentCard =
+    document.getElementById("studentCard");
+
+const statusBadge =
+    document.getElementById("statusBadge");
+
+const allowedBox =
+    document.getElementById("allowedBox");
+
+
+function getToken() {
+
+    return (
+        sessionStorage.getItem("idToken") ||
+        sessionStorage.getItem("token") ||
+        localStorage.getItem("idToken") ||
+        localStorage.getItem("token") ||
+        ""
+    );
 }
 
 
-function escapeHTML(value) {
+function showMessage(text, type = "info") {
 
-    if (
-        value === null ||
-        value === undefined
-    ) {
+    message.textContent = text;
+
+    message.className =
+        "message show " + type;
+}
+
+
+function clearMessage() {
+
+    message.textContent = "";
+
+    message.className =
+        "message";
+}
+
+
+function formatDate(value) {
+
+    if (!value) {
+        return "-";
+    }
+
+    const date =
+        new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return date.toLocaleString();
+}
+
+
+function getValue(object, keys) {
+
+    if (!object) {
         return "";
     }
 
-    return String(value)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+    for (const key of keys) {
 
-
-function showToast(
-    message,
-    type = ""
-) {
-
-    const toast =
-        get("toast");
-
-    toast.textContent =
-        message;
-
-    toast.className =
-        "show " + type;
-
-    clearTimeout(
-        window.toastTimer
-    );
-
-    window.toastTimer =
-        setTimeout(
-            () => {
-                toast.className = "";
-            },
-            3500
-        );
-}
-
-
-/* =========================================================
-   API REQUEST
-========================================================= */
-
-async function apiRequest(
-    url,
-    options = {}
-) {
-
-    if (!token) {
-
-        throw new Error(
-            "Your login session has expired."
-        );
+        if (
+            object[key] !== undefined &&
+            object[key] !== null &&
+            object[key] !== ""
+        ) {
+            return object[key];
+        }
     }
 
+    return "";
+}
 
-    options.headers = {
-        ...(options.headers || {}),
 
-        "Authorization":
-            "Bearer " + token,
+async function api(url, options = {}) {
 
-        "Content-Type":
-            "application/json"
+    const token =
+        getToken();
+
+    const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
     };
+
+
+    if (token) {
+
+        headers.Authorization =
+            "Bearer " + token;
+    }
 
 
     const response =
         await fetch(
             url,
-            options
+            {
+                ...options,
+                headers
+            }
         );
 
 
-    if (
-        response.status === 401
-    ) {
-
-        sessionStorage.removeItem(
-            "entrypass_token"
-        );
-
-        sessionStorage.removeItem(
-            "entrypass_user"
-        );
-
-        window.location.href =
-            "/admin-login.html";
-
-        throw new Error(
-            "Your session has expired."
-        );
-    }
-
-
-    let data = {};
+    let data = null;
 
     try {
 
@@ -1265,12 +711,36 @@ async function apiRequest(
     }
 
 
+    if (
+        response.status === 401 ||
+        response.status === 403
+    ) {
+
+        showMessage(
+            "Your security session has expired. Please log in again.",
+            "error"
+        );
+
+        setTimeout(
+            () => {
+                window.location.href =
+                    "/admin-login.html";
+            },
+            1200
+        );
+
+        throw new Error(
+            "Authentication failed."
+        );
+    }
+
+
     if (!response.ok) {
 
         throw new Error(
             data.message ||
             data.error ||
-            "Server request failed."
+            "Request failed."
         );
     }
 
@@ -1279,81 +749,408 @@ async function apiRequest(
 }
 
 
-/* =========================================================
-   LOAD USER
-========================================================= */
+async function checkAccess() {
 
-async function loadUser() {
+    try {
 
-    const data =
-        await apiRequest(
-            "/api/me",
-            {
-                method: "GET"
-            }
+        const data =
+            await api("/api/me");
+
+
+        const user =
+            data.user ||
+            data;
+
+
+        const role =
+            String(
+                user.role ||
+                ""
+            ).toUpperCase();
+
+
+        if (
+            role !== "SECURITY" &&
+            role !== "SUPER_ADMIN"
+        ) {
+
+            showMessage(
+                "Access denied. Security staff only.",
+                "error"
+            );
+
+            setTimeout(
+                () => {
+                    window.location.href =
+                        "/";
+                },
+                1200
+            );
+
+            return false;
+        }
+
+
+        return true;
+
+    } catch (error) {
+
+        showMessage(
+            error.message ||
+            "Unable to verify your account.",
+            "error"
         );
 
+        return false;
+    }
+}
 
-    currentUser =
-        data.user ||
+
+function showStudentResult(data) {
+
+    const entry =
+        data.entry ||
+        data.data ||
+        data.result ||
         data;
 
 
-    const role =
-        String(
-            currentUser.role ||
-            data.role ||
-            ""
-        ).toUpperCase();
-
-
-    if (
-        role !== "SECURITY" &&
-        role !== "SUPER_ADMIN"
-    ) {
-
-        throw new Error(
-            "You are not authorized to access the Security Portal."
-        );
-    }
+    const student =
+        entry.student ||
+        entry;
 
 
     const name =
-        currentUser.name ||
-        currentUser.displayName ||
-        currentUser.email ||
-        "Security Officer";
+        getValue(
+            student,
+            [
+                "studentName",
+                "name",
+                "displayName"
+            ]
+        ) ||
+        "Student";
 
 
-    get("operatorName").textContent =
-        name.length > 18
-            ? name.substring(0, 18) + "..."
-            : name;
+    const email =
+        getValue(
+            student,
+            [
+                "studentEmail",
+                "email"
+            ]
+        ) ||
+        "-";
 
 
-    get("welcomeText").textContent =
-        "Welcome, " +
-        name +
-        ". Verify student EntryPass QR codes securely.";
+    const studentId =
+        getValue(
+            student,
+            [
+                "studentId",
+                "rollNumber",
+                "registrationNumber"
+            ]
+        ) ||
+        "-";
 
 
-    sessionStorage.setItem(
-        "entrypass_user",
-        JSON.stringify(currentUser)
+    const studentType =
+        getValue(
+            student,
+            [
+                "studentType",
+                "type"
+            ]
+        ) ||
+        "-";
+
+
+    const verifiedBy =
+        getValue(
+            entry,
+            [
+                "verifiedBy",
+                "verifierName",
+                "verifiedByName"
+            ]
+        ) ||
+        "-";
+
+
+    const verifiedRole =
+        getValue(
+            entry,
+            [
+                "verifiedRole",
+                "verifierRole"
+            ]
+        ) ||
+        "-";
+
+
+    const verifiedAt =
+        getValue(
+            entry,
+            [
+                "verifiedAt",
+                "verifiedOn",
+                "createdAt",
+                "timestamp"
+            ]
+        );
+
+
+    document.getElementById(
+        "studentName"
+    ).textContent = name;
+
+
+    document.getElementById(
+        "studentEmail"
+    ).textContent = email;
+
+
+    document.getElementById(
+        "studentId"
+    ).textContent = studentId;
+
+
+    document.getElementById(
+        "studentType"
+    ).textContent = studentType;
+
+
+    document.getElementById(
+        "verifiedBy"
+    ).textContent = verifiedBy;
+
+
+    document.getElementById(
+        "verifiedRole"
+    ).textContent = verifiedRole;
+
+
+    document.getElementById(
+        "verifiedAt"
+    ).textContent =
+        formatDate(verifiedAt);
+
+
+    statusBadge.textContent =
+        "✓ VERIFIED";
+
+
+    statusBadge.style.background =
+        "rgba(34,197,94,.12)";
+
+
+    statusBadge.style.color =
+        "#86efac";
+
+
+    allowedBox.className =
+        "allowed";
+
+
+    allowedBox.textContent =
+        "✓ Entry verified successfully.";
+
+
+    emptyResult.style.display =
+        "none";
+
+
+    studentCard.classList.add(
+        "show"
     );
 }
 
 
-/* =========================================================
-   START CAMERA
-========================================================= */
+function showRejectedResult(text) {
+
+    emptyResult.style.display =
+        "none";
+
+
+    studentCard.classList.add(
+        "show"
+    );
+
+
+    statusBadge.textContent =
+        "✕ NOT VERIFIED";
+
+
+    statusBadge.style.background =
+        "rgba(239,68,68,.12)";
+
+
+    statusBadge.style.color =
+        "#fca5a5";
+
+
+    document.getElementById(
+        "studentName"
+    ).textContent =
+        "Entry Not Allowed";
+
+
+    document.getElementById(
+        "studentEmail"
+    ).textContent =
+        "";
+
+
+    document.getElementById(
+        "studentId"
+    ).textContent =
+        "-";
+
+
+    document.getElementById(
+        "studentType"
+    ).textContent =
+        "-";
+
+
+    document.getElementById(
+        "verifiedBy"
+    ).textContent =
+        "-";
+
+
+    document.getElementById(
+        "verifiedRole"
+    ).textContent =
+        "-";
+
+
+    document.getElementById(
+        "verifiedAt"
+    ).textContent =
+        "-";
+
+
+    allowedBox.className =
+        "allowed blocked";
+
+
+    allowedBox.textContent =
+        text ||
+        "Entry could not be verified.";
+}
+
+
+async function handleQR(decodedText) {
+
+    if (
+        processing ||
+        !decodedText
+    ) {
+        return;
+    }
+
+
+    processing = true;
+
+
+    showMessage(
+        "Verifying DayPass...",
+        "info"
+    );
+
+
+    try {
+
+        const data =
+            await api(
+                "/api/verify-qr",
+                {
+                    method: "POST",
+
+                    body: JSON.stringify({
+                        qrData:
+                            decodedText
+                    })
+                }
+            );
+
+
+        showStudentResult(
+            data
+        );
+
+
+        showMessage(
+            "QR verified successfully.",
+            "success"
+        );
+
+
+    } catch (error) {
+
+        showRejectedResult(
+            error.message ||
+            "This DayPass could not be verified."
+        );
+
+
+        showMessage(
+            error.message ||
+            "This DayPass could not be verified.",
+            "error"
+        );
+
+    } finally {
+
+        processing = false;
+    }
+}
+
+
+function qrSuccess(decodedText) {
+
+    stopCamera()
+        .finally(
+            () => {
+                handleQR(
+                    decodedText
+                );
+            }
+        );
+}
+
+
+function qrFailure() {
+
+    /*
+     * html5-qrcode calls this continuously
+     * while searching for a QR code.
+     *
+     * Do NOT display an error here.
+     */
+}
+
 
 async function startCamera() {
 
     if (cameraRunning) {
+        return;
+    }
 
-        showToast(
-            "Camera scanner is already running."
+
+    clearMessage();
+
+
+    if (
+        typeof Html5Qrcode ===
+        "undefined"
+    ) {
+
+        showMessage(
+            "QR scanner library is still loading. Please try again.",
+            "error"
         );
 
         return;
@@ -1361,10 +1158,6 @@ async function startCamera() {
 
 
     try {
-
-        /*
-         * Create scanner only once.
-         */
 
         if (!scanner) {
 
@@ -1374,10 +1167,6 @@ async function startCamera() {
                 );
         }
 
-
-        /*
-         * Start camera.
-         */
 
         await scanner.start(
 
@@ -1390,69 +1179,42 @@ async function startCamera() {
                 fps: 10,
 
                 qrbox: {
-                    width: 240,
-                    height: 240
+                    width: 250,
+                    height: 250
                 },
 
-                aspectRatio: 1.0,
-
-                rememberLastUsedCamera: true
+                aspectRatio: 1.0
             },
 
-            async decodedText => {
+            qrSuccess,
 
-                await handleQR(
-                    decodedText
-                );
-            },
-
-            () => {
-                /*
-                 * Normal camera-frame
-                 * scan failures are ignored.
-                 */
-            }
+            qrFailure
         );
 
 
         cameraRunning = true;
 
-        get("scannerStatus").textContent =
-            "Active";
+        cameraBtn.textContent =
+            "Camera Running";
 
 
-        showToast(
-            "Camera scanner started.",
-            "success"
+        showMessage(
+            "Camera ready. Point it at the DayPass QR.",
+            "info"
         );
 
 
     } catch (error) {
 
-        console.error(
-            "Camera start error:",
-            error
-        );
-
-
         cameraRunning = false;
 
-
-        get("scannerStatus").textContent =
-            "Ready";
-
-
-        showToast(
-            "Camera could not start. Please allow camera permission.",
+        showMessage(
+            "Unable to start the camera. Please allow camera permission or use Gallery.",
             "error"
         );
     }
 }
 
-
-/* =========================================================
-   STOP CAMERA
-========================================================= */
 
 async function stopCamera() {
 
@@ -1460,7 +1222,6 @@ async function stopCamera() {
         !scanner ||
         !cameraRunning
     ) {
-
         return;
     }
 
@@ -1469,944 +1230,180 @@ async function stopCamera() {
 
         await scanner.stop();
 
-    } catch (error) {
+    } catch {
 
-        console.warn(
-            "Camera stop warning:",
-            error
-        );
+        /*
+         * Camera may already be stopped.
+         */
+
+    } finally {
+
+        cameraRunning = false;
+
+        cameraBtn.textContent =
+            "Start Camera";
     }
-
-
-    cameraRunning = false;
-
-
-    get("scannerStatus").textContent =
-        "Ready";
-
-
-    /*
-     * Give html5-qrcode time to release
-     * the camera before file scanning.
-     */
-
-    await new Promise(
-        resolve =>
-            setTimeout(
-                resolve,
-                350
-            )
-    );
 }
 
 
-/* =========================================================
-   GALLERY QR SCANNER
-========================================================= */
+async function scanGallery(file) {
 
-async function openGallery() {
-
-    /*
-     * VERY IMPORTANT:
-     * Stop camera before scanFile().
-     */
-
-    await stopCamera();
-
-
-    /*
-     * Create a fresh file input.
-     */
-
-    const input =
-        document.createElement(
-            "input"
-        );
-
-
-    input.type = "file";
-
-    input.accept =
-        "image/*";
-
-
-    input.style.display =
-        "none";
-
-
-    document.body.appendChild(
-        input
-    );
-
-
-    input.addEventListener(
-        "change",
-        async function () {
-
-            const file =
-                input.files &&
-                input.files[0];
-
-
-            /*
-             * Remove input after selection.
-             */
-
-            input.remove();
-
-
-            if (!file) {
-
-                /*
-                 * User cancelled.
-                 * Restart camera.
-                 */
-
-                await startCamera();
-
-                return;
-            }
-
-
-            try {
-
-                showToast(
-                    "Reading QR from image..."
-                );
-
-
-                /*
-                 * Make sure scanner object exists.
-                 */
-
-                if (!scanner) {
-
-                    scanner =
-                        new Html5Qrcode(
-                            "reader"
-                        );
-                }
-
-
-                /*
-                 * scanFile() is used ONLY
-                 * after camera has stopped.
-                 */
-
-                const decodedText =
-                    await scanner.scanFile(
-                        file,
-                        true
-                    );
-
-
-                if (!decodedText) {
-
-                    throw new Error(
-                        "No QR code found."
-                    );
-                }
-
-
-                /*
-                 * Verify decoded QR.
-                 */
-
-                await handleQR(
-                    decodedText
-                );
-
-
-          } catch (error) {
-
-    showError(
-        "No QR code could be detected in this image. Please select a clear screenshot of the Day Pass QR."
-    );
-
-}
-
-                showError(
-                    "No valid QR code was found in this image."
-                );
-
-            } finally {
-
-                /*
-                 * Restart camera after
-                 * gallery scan.
-                 */
-
-                setTimeout(
-                    () => {
-                        startCamera();
-                    },
-                    500
-                );
-            }
-        }
-    );
-
-
-    /*
-     * Open file picker.
-     */
-
-    input.click();
-}
-
-
-/* =========================================================
-   HANDLE QR
-========================================================= */
-
-async function handleQR(
-    qrData
-) {
-
-    if (
-        processingQR
-    ) {
-
+    if (!file) {
         return;
     }
 
 
-    const cleanQR =
-        String(
-            qrData || ""
-        ).trim();
+    clearMessage();
 
 
-    if (!cleanQR) {
-
-        return;
-    }
-
-
-    /*
-     * Prevent duplicate camera scans.
-     */
-
-    const now =
-        Date.now();
-
-
-    if (
-        cleanQR === lastQR &&
-        now - lastQRTime < 4000
-    ) {
-
-        return;
-    }
-
-
-    lastQR =
-        cleanQR;
-
-    lastQRTime =
-        now;
-
-
-    processingQR =
-        true;
-
-
-    get("scannerStatus").textContent =
-        "Checking";
-
-
-    showToast(
-        "Verifying EntryPass..."
+    showMessage(
+        "Reading QR from image...",
+        "info"
     );
 
 
     try {
 
-        const result =
-            await apiRequest(
-                "/api/verify-qr",
-                {
-                    method: "POST",
+        if (!scanner) {
 
-                    body: JSON.stringify({
+            scanner =
+                new Html5Qrcode(
+                    "reader"
+                );
+        }
 
-                        /*
-                         * Your backend may use
-                         * either field.
-                         */
 
-                        qrData:
-                            cleanQR,
-
-                        token:
-                            cleanQR
-                    })
-                }
+        const decodedText =
+            await scanner.scanFile(
+                file,
+                true
             );
 
 
+        if (!decodedText) {
+
+            throw new Error(
+                "QR_NOT_FOUND"
+            );
+        }
+
+
+        await handleQR(
+            decodedText
+        );
+
+
+    } catch {
+
         /*
-         * Support multiple backend
-         * response formats.
+         * A normal invalid image should NOT
+         * produce a technical console error.
          */
 
-        const student =
-            result.student ||
-            result.entry?.student ||
-            {};
-
-
-        const entry =
-            result.entry ||
-            result;
-
-
-        const studentName =
-            student.name ||
-            entry.studentName ||
-            result.studentName ||
-            "Unknown Student";
-
-
-        const studentId =
-            student.studentId ||
-            entry.studentId ||
-            result.studentId ||
-            "N/A";
-
-
-        const studentType =
-            student.studentType ||
-            entry.studentType ||
-            result.studentType ||
-            "N/A";
-
-
-        const verifiedBy =
-            entry.verifiedBy ||
-            result.verifiedBy ||
-            entry.verifierName ||
-            result.verifierName ||
-            currentUser?.name ||
-            "Unknown";
-
-
-        const verifiedRole =
-            entry.verifiedByRole ||
-            result.verifiedByRole ||
-            entry.verifierRole ||
-            result.verifierRole ||
-            currentUser?.role ||
-            "SECURITY";
-
-
-        const entryId =
-            entry.id ||
-            entry.entryId ||
-            result.entryId ||
-            "N/A";
-
-
-        const createdAt =
-            entry.createdAt ||
-            result.createdAt ||
-            new Date().toISOString();
-
-
-        const status =
-            entry.status ||
-            result.status ||
-            "ALLOWED";
-
-
-        showSuccess(
-
-            studentName,
-
-            studentId,
-
-            studentType,
-
-            entryId,
-
-            createdAt,
-
-            verifiedBy,
-
-            verifiedRole,
-
-            status
-        );
-
-
-        get("scannerStatus").textContent =
-            "Verified";
-
-
-        await updateTodayCount();
-
-
-    } catch (error) {
-
-        console.error(
-            "QR verification error:",
-            error
-        );
-
-
-        get("scannerStatus").textContent =
-            "Denied";
-
-
-        showError(
-            error.message ||
-            "QR verification failed."
+        showMessage(
+            "No QR code could be detected in this image. Please select a clear screenshot of the DayPass QR.",
+            "error"
         );
 
 
     } finally {
 
-        processingQR =
-            false;
+        qrFile.value = "";
+
     }
 }
 
 
-/* =========================================================
-   SUCCESS
-========================================================= */
+cameraBtn.addEventListener(
+    "click",
+    async () => {
 
-function showSuccess(
+        if (cameraRunning) {
 
-    studentName,
+            await stopCamera();
 
-    studentId,
+            clearMessage();
 
-    studentType,
+        } else {
 
-    entryId,
-
-    createdAt,
-
-    verifiedBy,
-
-    verifiedRole,
-
-    status
-
-) {
-
-    const result =
-        get("result");
-
-
-    result.className =
-        "show success";
-
-
-    get("resultTitle").textContent =
-        "✓ Entry Verified Successfully";
-
-
-    get("resultMessage").textContent =
-        "The EntryPass was verified and recorded automatically.";
-
-
-    const initials =
-        String(studentName)
-            .split(" ")
-            .filter(Boolean)
-            .slice(0,2)
-            .map(
-                word =>
-                    word.charAt(0)
-            )
-            .join("")
-            .toUpperCase();
-
-
-    get("details").innerHTML = `
-
-        <div class="student">
-
-            <div class="student-head">
-
-                <div class="avatar">
-                    ${escapeHTML(initials || "S")}
-                </div>
-
-                <div>
-
-                    <div class="student-name">
-                        ${escapeHTML(studentName)}
-                    </div>
-
-                    <div class="student-sub">
-                        Student EntryPass
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <div class="details-list">
-
-                ${detail(
-                    "Student Name",
-                    studentName
-                )}
-
-                ${detail(
-                    "Student ID",
-                    studentId
-                )}
-
-                ${detail(
-                    "Student Type",
-                    studentType
-                )}
-
-                ${detail(
-                    "Entry ID",
-                    entryId
-                )}
-
-                ${detail(
-                    "Date & Time",
-                    formatDate(createdAt)
-                )}
-
-                ${detail(
-                    "Verified By",
-                    verifiedBy
-                )}
-
-                ${detail(
-                    "Verified Role",
-                    verifiedRole
-                )}
-
-                <div class="detail">
-
-                    <span class="detail-label">
-                        Status
-                    </span>
-
-                    <span class="detail-value allowed">
-                        ✓ ${escapeHTML(status)}
-                    </span>
-
-                </div>
-
-            </div>
-
-        </div>
-
-    `;
-}
-
-
-/* =========================================================
-   DETAIL ROW
-========================================================= */
-
-function detail(
-    label,
-    value
-) {
-
-    return `
-
-        <div class="detail">
-
-            <span class="detail-label">
-                ${escapeHTML(label)}
-            </span>
-
-            <span class="detail-value">
-                ${escapeHTML(value)}
-            </span>
-
-        </div>
-    `;
-}
-
-
-/* =========================================================
-   ERROR
-========================================================= */
-
-function showError(
-    message
-) {
-
-    const result =
-        get("result");
-
-
-    result.className =
-        "show error";
-
-
-    get("resultTitle").textContent =
-        "✕ Verification Failed";
-
-
-    get("resultMessage").textContent =
-        message;
-
-
-    get("details").innerHTML = `
-
-        <div class="empty">
-
-            <div
-                class="empty-icon"
-                style="
-                    background:
-                    rgba(239,68,68,.09);
-                "
-            >
-                ⚠️
-            </div>
-
-            <strong>
-                Entry not verified
-            </strong>
-
-            <span>
-                ${escapeHTML(message)}
-            </span>
-
-        </div>
-
-    `;
-
-
-    showToast(
-        message,
-        "error"
-    );
-}
-
-
-/* =========================================================
-   DATE
-========================================================= */
-
-function formatDate(
-    value
-) {
-
-    try {
-
-        const date =
-            new Date(value);
-
-
-        if (
-            Number.isNaN(
-                date.getTime()
-            )
-        ) {
-
-            return String(
-                value || "N/A"
-            );
-        }
-
-
-        return date.toLocaleString(
-            "en-IN",
-            {
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit"
-            }
-        );
-
-    } catch {
-
-        return "N/A";
-    }
-}
-
-
-/* =========================================================
-   TODAY COUNT
-========================================================= */
-
-async function updateTodayCount() {
-
-    try {
-
-        const data =
-            await apiRequest(
-                "/api/admin/entries",
-                {
-                    method: "GET"
-                }
-            );
-
-
-        const entries =
-            data.entries ||
-            data.data ||
-            (
-                Array.isArray(data)
-                    ? data
-                    : []
-            );
-
-
-        const today =
-            new Date();
-
-
-        const count =
-            entries.filter(
-                entry => {
-
-                    const raw =
-                        entry.createdAt ||
-                        entry.date ||
-                        entry.timestamp;
-
-
-                    if (!raw) {
-                        return false;
-                    }
-
-
-                    const date =
-                        new Date(raw);
-
-
-                    return (
-                        date.getFullYear()
-                            ===
-                        today.getFullYear()
-                        &&
-                        date.getMonth()
-                            ===
-                        today.getMonth()
-                        &&
-                        date.getDate()
-                            ===
-                        today.getDate()
-                    );
-                }
-            ).length;
-
-
-        get("todayCount").textContent =
-            count;
-
-
-    } catch (error) {
-
-        console.warn(
-            "Could not load today's count:",
-            error
-        );
-    }
-}
-
-
-/* =========================================================
-   LOGOUT
-========================================================= */
-
-async function logout() {
-
-    try {
-
-        if (token) {
-
-            await fetch(
-                "/api/logout",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Authorization":
-                            "Bearer " + token,
-
-                        "Content-Type":
-                            "application/json"
-                    }
-                }
-            );
-        }
-
-    } catch {
-        /*
-         * Local logout continues even
-         * if server logout fails.
-         */
-    }
-
-
-    /*
-     * Stop camera.
-     */
-
-    try {
-
-        await stopCamera();
-
-    } catch {
-        /* Ignore */
-    }
-
-
-    sessionStorage.removeItem(
-        "entrypass_token"
-    );
-
-    sessionStorage.removeItem(
-        "entrypass_user"
-    );
-
-
-    window.location.href =
-        "/admin-login.html";
-}
-
-
-/* =========================================================
-   INITIALIZATION
-========================================================= */
-
-async function initialize() {
-
-    try {
-
-        /*
-         * Check login token.
-         */
-
-        if (!token) {
-
-            window.location.href =
-                "/admin-login.html";
-
-            return;
-        }
-
-
-        /*
-         * Load authenticated user.
-         */
-
-        await loadUser();
-
-
-        /*
-         * Load today's count.
-         */
-
-        await updateTodayCount();
-
-
-        /*
-         * Hide loading screen.
-         */
-
-        get("loadingScreen")
-            .classList
-            .add("hidden");
-
-
-        /*
-         * Start camera.
-         *
-         * Small delay prevents
-         * browser initialization race.
-         */
-
-        setTimeout(
-            () => {
-
-                startCamera();
-
-            },
-            500
-        );
-
-
-    } catch (error) {
-
-        console.error(
-            "Security portal error:",
-            error
-        );
-
-
-        get("loadingScreen")
-            .classList
-            .add("hidden");
-
-
-        showToast(
-            error.message ||
-            "Unable to load Security Portal.",
-            "error"
-        );
-
-
-        /*
-         * Redirect only when
-         * authentication failed.
-         */
-
-        if (
-            !token ||
-            /session|authorized|login/i.test(
-                error.message || ""
-            )
-        ) {
-
-            setTimeout(
-                () => {
-
-                    sessionStorage.removeItem(
-                        "entrypass_token"
-                    );
-
-                    sessionStorage.removeItem(
-                        "entrypass_user"
-                    );
-
-                    window.location.href =
-                        "/admin-login.html";
-
-                },
-                1800
-            );
+            await startCamera();
         }
     }
-}
-
-
-/* =========================================================
-   PAGE START
-========================================================= */
-
-window.addEventListener(
-    "DOMContentLoaded",
-    initialize
 );
 
 
-/* =========================================================
-   CLEANUP
-========================================================= */
+galleryBtn.addEventListener(
+    "click",
+    async () => {
+
+        await stopCamera();
+
+        qrFile.click();
+    }
+);
+
+
+qrFile.addEventListener(
+    "change",
+    async event => {
+
+        const file =
+            event.target.files &&
+            event.target.files[0];
+
+
+        if (file) {
+
+            await scanGallery(
+                file
+            );
+        }
+    }
+);
+
+
+logoutBtn.addEventListener(
+    "click",
+    async () => {
+
+        try {
+
+            await api(
+                "/api/logout",
+                {
+                    method: "POST"
+                }
+            );
+
+        } catch {
+            /*
+             * Continue with local logout.
+             */
+        }
+
+
+        sessionStorage.removeItem(
+            "idToken"
+        );
+
+        sessionStorage.removeItem(
+            "token"
+        );
+
+        localStorage.removeItem(
+            "idToken"
+        );
+
+        localStorage.removeItem(
+            "token"
+        );
+
+
+        window.location.href =
+            "/admin-login.html";
+    }
+);
+
 
 window.addEventListener(
     "beforeunload",
@@ -2426,6 +1423,24 @@ window.addEventListener(
     }
 );
 
+
+(async function init() {
+
+    const allowed =
+        await checkAccess();
+
+
+    if (!allowed) {
+        return;
+    }
+
+
+    showMessage(
+        "Security portal ready.",
+        "success"
+    );
+
+})();
 </script>
 
 </body>
